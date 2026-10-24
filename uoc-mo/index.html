@@ -1,0 +1,1039 @@
+<!DOCTYPE html>
+<html lang="vi" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Danh Sách Ước Mơ | Mọi điều em muốn, anh sẽ nhớ</title>
+  <meta name="description" content="Nơi lưu giữ mọi món quà yêu thích của em và những bất ngờ ngọt ngào từ anh." />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            serif: ['"Cormorant Garamond"', 'Georgia', 'serif'],
+            sans: ['"Outfit"', 'system-ui', 'sans-serif'],
+          }
+        }
+      }
+    };
+  </script>
+  <style>
+    body {
+      background-color: #0c080d;
+      color: #f8fafc;
+      min-height: 100dvh;
+      overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+    .tabular-nums {
+      font-variant-numeric: tabular-nums;
+    }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0c080d; }
+    ::-webkit-scrollbar-thumb { background: #33223a; border-radius: 9999px; }
+    ::-webkit-scrollbar-thumb:hover { background: #f43f5e; }
+    @media (prefers-reduced-motion: reduce) {
+      *, ::before, ::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+  </style>
+</head>
+<body class="font-sans antialiased selection:bg-rose-500/30 selection:text-rose-100">
+  <!-- Ambient Background Glow -->
+  <div aria-hidden="true" class="fixed inset-0 pointer-events-none z-0 overflow-hidden">
+    <div class="absolute -top-32 left-1/2 -translate-x-1/2 w-[680px] h-[320px] rounded-full bg-rose-600/10 blur-[120px]"></div>
+    <div class="absolute bottom-0 right-1/4 w-[420px] h-[260px] rounded-full bg-pink-600/5 blur-[110px]"></div>
+  </div>
+
+  <div id="app" class="relative z-10 min-h-[100dvh] flex flex-col"></div>
+
+  <script>
+    // =========================================================================
+    // CẤU HÌNH & DỮ LIỆU MẶC ĐỊNH (Mã PIN mặc định của anh: 2410)
+    // =========================================================================
+    const STORAGE_KEY = "couple_wishlist_items_v2";
+    const PIN_SESSION_KEY = "couple_wishlist_unlocked_v2";
+    const CUSTOM_PIN_KEY = "couple_wishlist_custom_pin_v2";
+    const WEBHOOK_KEY = "couple_wishlist_webhook_url_v2";
+    const SUPABASE_URL_KEY = "couple_wishlist_sb_url_v2";
+    const SUPABASE_ANON_KEY = "couple_wishlist_sb_key_v2";
+
+    const PRIORITY_OPTIONS = [
+      { key: "uoc_thoi", label: "Ước thôi", emoji: "💭", rank: 1, badgeClass: "bg-zinc-800/80 text-zinc-300 border-zinc-700", activeClass: "bg-rose-500/20 text-rose-200 border-rose-500 shadow-[0_0_20px_rgba(244,63,94,0.25)]" },
+      { key: "thich_nha", label: "Thích nha", emoji: "🌷", rank: 2, badgeClass: "bg-rose-950/60 text-rose-300 border-rose-800/60", activeClass: "bg-rose-500/20 text-rose-200 border-rose-500 shadow-[0_0_20px_rgba(244,63,94,0.25)]" },
+      { key: "muon_lam", label: "Muốn lắm", emoji: "🥺", rank: 3, badgeClass: "bg-amber-950/60 text-amber-300 border-amber-800/60", activeClass: "bg-rose-500/25 text-rose-100 border-rose-400 shadow-[0_0_24px_rgba(244,63,94,0.3)]" },
+      { key: "can_roi", label: "Cần rồi", emoji: "💕", rank: 4, badgeClass: "bg-pink-950/70 text-pink-300 border-pink-700/60", activeClass: "bg-rose-500/30 text-white border-rose-400 shadow-[0_0_25px_rgba(244,63,94,0.35)]" },
+      { key: "phai_co", label: "PHẢI CÓ", emoji: "🥵", rank: 5, badgeClass: "bg-rose-600/30 text-rose-200 border-rose-500/70 font-semibold", activeClass: "bg-gradient-to-r from-rose-600/40 to-pink-600/40 text-white border-rose-400 shadow-[0_0_28px_rgba(244,63,94,0.45)]" },
+    ];
+
+    const CATEGORY_OPTIONS = [
+      { key: "qua_doi_lang_man", label: "Quà Đôi & Lãng Mạn", emoji: "💕" },
+      { key: "my_pham_lam_dep", label: "Mỹ Phẩm & Làm Đẹp", emoji: "💄" },
+      { key: "thoi_trang_phu_kien", label: "Thời Trang & Phụ Kiện", emoji: "👗" },
+      { key: "suc_khoe", label: "Sức Khoẻ & Chăm Sóc", emoji: "🌿" },
+      { key: "do_dien_tu", label: "Đồ Điện Tử & Công Nghệ", emoji: "🎧" },
+      { key: "an_uong_trai_nghiem", label: "Ăn Uống & Hẹn Hò", emoji: "🍰" },
+      { key: "khac", label: "Điều Ước Khác", emoji: "✨" },
+    ];
+
+    const STATUS_OPTIONS = [
+      { key: "pending", label: "Chờ anh xem", shortLabel: "Chờ xem", badgeClass: "bg-zinc-800/90 text-zinc-300 border-zinc-700" },
+      { key: "secret_prep", label: "Đang bí mật chuẩn bị", shortLabel: "Đang chuẩn bị", badgeClass: "bg-amber-950/80 text-amber-300 border-amber-700/70" },
+      { key: "bought", label: "Đã mua sẵn sàng", shortLabel: "Đã mua", badgeClass: "bg-rose-950/80 text-rose-300 border-rose-700/70" },
+      { key: "gifted", label: "Đã trao tận tay em", shortLabel: "Đã tặng", badgeClass: "bg-emerald-950/80 text-emerald-300 border-emerald-700/70" },
+    ];
+
+    const INITIAL_WISHES = [
+      { id: "w-101", title: "Vòng tay bạc khắc tên hai đứa", category: "qua_doi_lang_man", price: 650000, priority: "muon_lam", product_link: "https://shopee.vn", notes: "Màu bạc sáng nhé anh, cổ tay em 15cm ạ", status: "secret_prep", secret_note: "Đã nhắn tiệm bạc đặt khắc tên, tuần sau lấy", created_at: new Date(Date.now() - 86400000 * 4).toISOString() },
+      { id: "w-102", title: "Son kem nhung lì tông hồng đất", category: "my_pham_lam_dep", price: 420000, priority: "can_roi", product_link: "https://shopee.vn", notes: "Màu số 04 Rose Tea nha anh yêu", status: "bought", secret_note: "Đã săn sale về tay, cất trong ngăn kéo bàn làm việc", created_at: new Date(Date.now() - 86400000 * 3).toISOString() },
+      { id: "w-103", title: "Tai nghe chụp tai chống ồn màu kem", category: "do_dien_tu", price: 1450000, priority: "phai_co", product_link: "https://shopee.vn", notes: "Bản Bluetooth 5.4 màu Cream nha anh", status: "pending", secret_note: "", created_at: new Date(Date.now() - 86400000 * 2).toISOString() },
+      { id: "w-104", title: "Máy massage cổ vai gáy mini", category: "suc_khoe", price: 890000, priority: "thich_nha", product_link: "", notes: "Màu trắng hoặc hồng pastel đều xinh ạ", status: "pending", secret_note: "", created_at: new Date(Date.now() - 86400000 * 1).toISOString() },
+      { id: "w-105", title: "Váy lụa đi biển trễ vai", category: "thoi_trang_phu_kien", price: 550000, priority: "uoc_thoi", product_link: "", notes: "Màu hồng phấn, size S nhé anh", status: "pending", secret_note: "", created_at: new Date().toISOString() },
+    ];
+
+    function escapeHtml(str) {
+      return String(str || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    function loadLocalWishes() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(INITIAL_WISHES));
+          return [...INITIAL_WISHES];
+        }
+        return JSON.parse(raw);
+      } catch {
+        return [...INITIAL_WISHES];
+      }
+    }
+
+    function saveLocalWishes(list) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+    }
+
+    function formatVND(amount) {
+      return new Intl.NumberFormat("vi-VN").format(Math.round(amount || 0)) + " ₫";
+    }
+
+    function formatNumberInput(val) {
+      const digits = String(val).replace(/\D/g, "");
+      if (!digits) return "";
+      return new Intl.NumberFormat("en-US").format(Number(digits));
+    }
+
+    function parseNumberInput(str) {
+      const digits = String(str).replace(/\D/g, "");
+      return digits ? Number(digits) : 0;
+    }
+
+    function getPriority(k) { return PRIORITY_OPTIONS.find(p => p.key === k) || PRIORITY_OPTIONS[2]; }
+    function getCategory(k) { return CATEGORY_OPTIONS.find(c => c.key === k) || CATEGORY_OPTIONS[0]; }
+    function getStatus(k) { return STATUS_OPTIONS.find(s => s.key === (k || "pending")) || STATUS_OPTIONS[0]; }
+
+    const state = {
+      wishes: loadLocalWishes(),
+      activeTab: "em",
+      isUnlocked: sessionStorage.getItem(PIN_SESSION_KEY) === "true",
+      adminPin: localStorage.getItem(CUSTOM_PIN_KEY) || "2410",
+      form: {
+        title: "",
+        category: "qua_doi_lang_man",
+        priceDisplay: "500,000",
+        priority: "muon_lam",
+        product_link: "",
+        notes: "",
+        error: "",
+        success: ""
+      },
+      drawerOpen: false,
+      editingId: null,
+      editDraft: null,
+      pinModalOpen: false,
+      pinInput: "",
+      pinError: "",
+      luckyModalOpen: false,
+      luckySpinning: false,
+      luckyHighlight: "",
+      luckyPicked: null,
+      luckyBudget: 0,
+      luckyPriority: "all",
+      editingSecretId: null,
+      secretNoteDraft: "",
+      configOpen: false,
+      filters: {
+        search: "",
+        category: "all",
+        priority: "all",
+        status: "all",
+        sort: "priority_desc"
+      },
+      webhookUrl: localStorage.getItem(WEBHOOK_KEY) || "",
+      sbUrl: localStorage.getItem(SUPABASE_URL_KEY) || "",
+      sbKey: localStorage.getItem(SUPABASE_ANON_KEY) || "",
+      sbClient: null
+    };
+
+    function initSupabaseClient() {
+      if (state.sbUrl && state.sbKey && window.supabase) {
+        try {
+          state.sbClient = window.supabase.createClient(state.sbUrl, state.sbKey);
+          fetchFromSupabase();
+        } catch (e) {
+          console.warn("Supabase init error:", e);
+        }
+      }
+    }
+
+    async function fetchFromSupabase() {
+      if (!state.sbClient) return;
+      const { data, error } = await state.sbClient
+        .from("wishes")
+        .select("*")
+        .eq("is_deleted", false)
+        .order("created_at", { ascending: false });
+      if (!error && Array.isArray(data)) {
+        state.wishes = data;
+        saveLocalWishes(data);
+        render();
+      }
+    }
+
+    async function pushGoogleSheetWebhook(action, wish) {
+      if (!state.webhookUrl || !state.webhookUrl.startsWith("http")) return;
+      try {
+        const cat = getCategory(wish.category);
+        const pri = getPriority(wish.priority);
+        const st = getStatus(wish.status);
+        await fetch(state.webhookUrl, {
+          method: "POST",
+          mode: "no-cors",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action,
+            wish: {
+              ...wish,
+              categoryLabel: `${cat.emoji} ${cat.label}`,
+              priorityLabel: `${pri.emoji} ${pri.label}`,
+              statusLabel: st.label,
+              createdAtFormatted: new Date(wish.created_at).toLocaleString("vi-VN")
+            }
+          })
+        });
+      } catch (e) {
+        console.warn("Google Sheet sync skipped:", e);
+      }
+    }
+
+    function render() {
+      const app = document.getElementById("app");
+      const stats = {
+        totalCount: state.wishes.length,
+        totalValue: state.wishes.reduce((s, w) => s + (w.price || 0), 0),
+        prepCount: state.wishes.filter(w => w.status === "secret_prep" || w.status === "bought").length,
+        prepBudget: state.wishes.filter(w => w.status === "secret_prep" || w.status === "bought").reduce((s, w) => s + (w.price || 0), 0),
+        giftedCount: state.wishes.filter(w => w.status === "gifted").length,
+      };
+
+      const filteredWishes = state.wishes
+        .filter(w => {
+          if (state.filters.search && !w.title.toLowerCase().includes(state.filters.search.toLowerCase()) && !(w.notes || "").toLowerCase().includes(state.filters.search.toLowerCase())) return false;
+          if (state.filters.category !== "all" && w.category !== state.filters.category) return false;
+          if (state.filters.priority !== "all" && w.priority !== state.filters.priority) return false;
+          if (state.filters.status !== "all" && (w.status || "pending") !== state.filters.status) return false;
+          return true;
+        })
+        .sort((a, b) => {
+          if (state.filters.sort === "priority_desc") return getPriority(b.priority).rank - getPriority(a.priority).rank;
+          if (state.filters.sort === "price_asc") return (a.price || 0) - (b.price || 0);
+          if (state.filters.sort === "price_desc") return (b.price || 0) - (a.price || 0);
+          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        });
+
+      const eligibleLucky = state.wishes.filter(w => {
+        if (w.status === "gifted" || w.status === "bought") return false;
+        if (state.luckyBudget > 0 && (w.price || 0) > state.luckyBudget) return false;
+        if (state.luckyPriority !== "all" && w.priority !== state.luckyPriority) return false;
+        return true;
+      });
+
+      app.innerHTML = `
+        <!-- HEADER -->
+        <header class="w-full border-b border-rose-950/60 bg-[#140d18]/90 backdrop-blur-md sticky top-0 z-30">
+          <div class="max-w-4xl mx-auto px-4 sm:px-6 py-3.5 flex items-center justify-between gap-3">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-rose-950/70 border border-rose-800/40 flex items-center justify-center text-xl shadow-inner">🌹</div>
+              <div>
+                <h1 class="font-serif text-2xl sm:text-3xl font-bold tracking-tight text-rose-200 leading-none">Danh Sách Ước Mơ</h1>
+                <p class="text-xs sm:text-sm text-zinc-400 mt-1">Mọi điều em muốn, anh sẽ nhớ 💌</p>
+              </div>
+            </div>
+            <button id="btn-open-drawer" type="button" class="flex items-center gap-2 px-3.5 py-2 rounded-full bg-rose-950/60 hover:bg-rose-900/60 border border-rose-800/50 text-rose-200 text-xs sm:text-sm font-medium transition-all active:scale-[0.98]">
+              <span>💖</span>
+              <span class="tabular-nums font-semibold text-rose-100">${state.wishes.length}</span>
+              <span class="hidden sm:inline">điều ước trong giỏ quà</span>
+              <span class="inline sm:hidden">điều ước</span>
+            </button>
+          </div>
+
+          <div class="max-w-3xl mx-auto px-4 pt-3 pb-4">
+            <div class="grid grid-cols-2 p-1.5 rounded-2xl bg-[#110b14] border border-zinc-800/80">
+              <button id="tab-em" type="button" class="flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-semibold transition-all active:scale-[0.98] ${state.activeTab === 'em' ? 'bg-gradient-to-r from-rose-500 to-pink-500 text-white shadow-[0_4px_20px_rgba(244,63,94,0.4)]' : 'text-zinc-400 hover:text-zinc-200'}">
+                <span class="truncate">✨ Thêm món quà yêu thích của em ✨</span>
+              </button>
+              <button id="tab-anh" type="button" class="flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-semibold transition-all active:scale-[0.98] ${state.activeTab === 'anh' ? 'bg-gradient-to-r from-rose-500 to-pink-500 text-white shadow-[0_4px_20px_rgba(244,63,94,0.4)]' : 'text-zinc-400 hover:text-zinc-200'}">
+                <span class="truncate">📑 Bảng quà của anh 💖</span>
+              </button>
+            </div>
+          </div>
+        </header>
+
+        <!-- MAIN CONTENT -->
+        <main class="flex-1 pb-16">
+          ${state.activeTab === "em" ? `
+            <section class="w-full max-w-3xl mx-auto px-4 py-6 sm:py-8">
+              <div class="mb-6">
+                <h2 class="font-serif text-2xl sm:text-3xl font-bold text-white tracking-tight">Thêm một món quà em thích vào đây nhoaaa ♥</h2>
+                <p class="text-sm text-zinc-400 mt-1.5 leading-relaxed">Em hãy thêm những món quà mình thích nhé, rồi 1 món quà may mắn sẽ là bất ngờ sau này ♥</p>
+              </div>
+
+              <form id="wish-form" class="rounded-2xl bg-[#150f19] border border-zinc-800/90 p-5 sm:p-7 shadow-[0_20px_50px_rgba(0,0,0,0.6)] space-y-6">
+                <div class="space-y-2">
+                  <label for="inp-title" class="block text-xs font-semibold uppercase tracking-wider text-zinc-300">♡ Tên quà tặng</label>
+                  <input id="inp-title" type="text" value="${escapeHtml(state.form.title)}" placeholder="Ví dụ: Vòng tay bạc khắc tên..." class="w-full rounded-xl bg-[#1d1522] border border-zinc-800 focus:border-rose-500 px-4 py-3 text-sm sm:text-base text-zinc-100 placeholder:text-zinc-500 outline-none transition-all" />
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                  <div class="space-y-2">
+                    <label for="inp-category" class="block text-xs font-semibold uppercase tracking-wider text-zinc-300">🏷️ Danh mục</label>
+                    <select id="inp-category" class="w-full rounded-xl bg-[#1d1522] border border-zinc-800 focus:border-rose-500 px-4 py-3 text-sm sm:text-base text-zinc-100 outline-none cursor-pointer">
+                      ${CATEGORY_OPTIONS.map(c => `<option value="${c.key}" ${state.form.category === c.key ? 'selected' : ''} class="bg-[#18111c]">${c.emoji} ${c.label}</option>`).join('')}
+                    </select>
+                  </div>
+
+                  <div class="space-y-2">
+                    <label for="inp-price" class="block text-xs font-semibold uppercase tracking-wider text-zinc-300">$ Giá ước tính (VNĐ)</label>
+                    <div class="relative">
+                      <input id="inp-price" type="text" inputmode="numeric" value="${escapeHtml(state.form.priceDisplay)}" placeholder="500,000" class="w-full rounded-xl bg-[#1d1522] border border-zinc-800 focus:border-rose-500 pl-4 pr-10 py-3 text-sm sm:text-base text-zinc-100 tabular-nums outline-none" />
+                      <span class="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-amber-400">₫</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="space-y-2.5">
+                  <span class="block text-xs font-semibold uppercase tracking-wider text-zinc-300">Độ ưu tiên</span>
+                  <div class="grid grid-cols-1 sm:grid-cols-5 gap-2.5">
+                    ${PRIORITY_OPTIONS.map(opt => `
+                      <button type="button" data-priority="${opt.key}" class="btn-priority flex items-center justify-center gap-2 py-3 px-3 rounded-xl border text-xs sm:text-sm font-medium transition-all active:scale-[0.98] ${state.form.priority === opt.key ? opt.activeClass : 'bg-[#1d1522] border-zinc-800 text-zinc-300 hover:border-zinc-700'}">
+                        <span class="text-base leading-none">${opt.emoji}</span>
+                        <span>${opt.label}</span>
+                      </button>
+                    `).join('')}
+                  </div>
+                </div>
+
+                <div class="space-y-2">
+                  <label for="inp-link" class="block text-xs font-semibold uppercase tracking-wider text-zinc-300">🔗 Link sản phẩm (tuỳ chọn)</label>
+                  <input id="inp-link" type="url" value="${escapeHtml(state.form.product_link)}" placeholder="https://shopee.vn/..." class="w-full rounded-xl bg-[#1d1522] border border-zinc-800 focus:border-rose-500 px-4 py-3 text-sm sm:text-base text-zinc-100 placeholder:text-zinc-500 outline-none" />
+                </div>
+
+                <div class="space-y-2">
+                  <label for="inp-notes" class="block text-xs font-semibold uppercase tracking-wider text-zinc-300">📝 Ghi chú thêm (tuỳ chọn)</label>
+                  <textarea id="inp-notes" rows="3" placeholder="Màu hồng nhé anh, size M..." class="w-full rounded-xl bg-[#1d1522] border border-zinc-800 focus:border-rose-500 px-4 py-3 text-sm sm:text-base text-zinc-100 placeholder:text-zinc-500 outline-none resize-none">${escapeHtml(state.form.notes)}</textarea>
+                </div>
+
+                ${state.form.error ? `<div class="rounded-xl bg-rose-950/80 border border-rose-700/70 px-4 py-3 text-sm text-rose-200">${escapeHtml(state.form.error)}</div>` : ''}
+                ${state.form.success ? `
+                  <div class="rounded-xl bg-emerald-950/70 border border-emerald-700/60 px-4 py-3 text-sm text-emerald-200 flex items-center justify-between gap-3">
+                    <span>✅ ${escapeHtml(state.form.success)}</span>
+                    <button id="btn-success-open-drawer" type="button" class="text-xs font-semibold underline text-emerald-300 hover:text-white shrink-0">Xem giỏ quà (${state.wishes.length})</button>
+                  </div>
+                ` : ''}
+
+                <button type="submit" class="w-full py-3.5 px-6 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600 text-white font-semibold text-sm sm:text-base shadow-[0_6px_28px_rgba(244,63,94,0.4)] flex items-center justify-center gap-2 transition-all active:scale-[0.98]">
+                  <span>🚀 Thêm vào danh sách ước mơ 💞</span>
+                </button>
+              </form>
+            </section>
+          ` : `
+            <!-- BẢNG QUÀ CỦA ANH -->
+            <section class="w-full max-w-4xl mx-auto px-4 py-6 sm:py-8 space-y-6">
+              <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <h2 class="font-serif text-2xl sm:text-3xl font-bold text-white">Bảng Quà Bí Mật Của Anh 💖</h2>
+                  <p class="text-xs sm:text-sm text-zinc-400 mt-1">Lên kế hoạch chuẩn bị quà bất ngờ và theo dõi ngân sách dành tặng em</p>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                  <button id="btn-open-lucky" type="button" class="px-4 py-2.5 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600 text-white text-xs sm:text-sm font-semibold flex items-center gap-2 shadow-[0_4px_20px_rgba(244,63,94,0.35)] active:scale-[0.98]">
+                    <span>🎁 Bốc thăm quà may mắn</span>
+                  </button>
+                  <button id="btn-toggle-config" type="button" class="px-3.5 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200 text-xs sm:text-sm font-medium active:scale-[0.98]">
+                    <span>⚙️ Kết nối Sheet / Cloud</span>
+                  </button>
+                  <button id="btn-lock-pin" type="button" class="px-3.5 py-2.5 rounded-xl bg-zinc-800/80 hover:bg-zinc-700 border border-zinc-700 text-rose-300 text-xs sm:text-sm font-medium active:scale-[0.98]">
+                    <span>🔒 Khóa PIN</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Cloud & Google Sheet Sync Config Panel -->
+              ${state.configOpen ? `
+                <div class="rounded-2xl bg-[#18111d] border border-rose-900/60 p-5 space-y-4">
+                  <div class="flex items-center justify-between">
+                    <h3 class="font-serif text-lg font-bold text-rose-200">⚙️ Cấu Hình Đồng Bộ Google Sheet & Supabase Cloud</h3>
+                    <button id="btn-close-config" type="button" class="text-xs text-zinc-400 hover:text-white">Đóng ✕</button>
+                  </div>
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div class="space-y-1">
+                      <label class="text-xs text-zinc-300 font-medium">📊 Google Apps Script Webhook URL (Đồng bộ Sheet)</label>
+                      <input id="inp-webhook" type="url" value="${escapeHtml(state.webhookUrl)}" placeholder="https://script.google.com/macros/s/.../exec" class="w-full rounded-xl bg-[#120c16] border border-zinc-700 px-3 py-2 text-xs text-white outline-none focus:border-rose-500" />
+                    </div>
+                    <div class="space-y-1">
+                      <label class="text-xs text-zinc-300 font-medium">🔑 Đổi mã PIN mở Bảng quà của anh</label>
+                      <input id="inp-custom-pin" type="text" value="${escapeHtml(state.adminPin)}" placeholder="2410" class="w-full rounded-xl bg-[#120c16] border border-zinc-700 px-3 py-2 text-xs text-white tabular-nums outline-none focus:border-rose-500" />
+                    </div>
+                    <div class="space-y-1">
+                      <label class="text-xs text-zinc-300 font-medium">⚡ Supabase Project URL (Tuỳ chọn)</label>
+                      <input id="inp-sb-url" type="url" value="${escapeHtml(state.sbUrl)}" placeholder="https://xyz.supabase.co" class="w-full rounded-xl bg-[#120c16] border border-zinc-700 px-3 py-2 text-xs text-white outline-none focus:border-rose-500" />
+                    </div>
+                    <div class="space-y-1">
+                      <label class="text-xs text-zinc-300 font-medium">🛡️ Supabase Anon Public Key (Tuỳ chọn)</label>
+                      <input id="inp-sb-key" type="password" value="${escapeHtml(state.sbKey)}" placeholder="eyJhbGciOiJIUzI1NiIs..." class="w-full rounded-xl bg-[#120c16] border border-zinc-700 px-3 py-2 text-xs text-white outline-none focus:border-rose-500" />
+                    </div>
+                  </div>
+                  <div class="flex justify-end">
+                    <button id="btn-save-config" type="button" class="px-4 py-2 rounded-xl bg-rose-500 hover:bg-rose-600 text-xs font-semibold text-white active:scale-[0.98]">Lưu cấu hình</button>
+                  </div>
+                </div>
+              ` : ''}
+
+              <!-- Stats -->
+              <div class="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
+                <div class="rounded-2xl bg-[#150f19] border border-zinc-800/90 p-4">
+                  <span class="text-xs text-zinc-400">Tổng số điều ước</span>
+                  <p class="text-2xl font-bold text-white tabular-nums mt-1">${stats.totalCount} món</p>
+                </div>
+                <div class="rounded-2xl bg-[#150f19] border border-zinc-800/90 p-4">
+                  <span class="text-xs text-zinc-400">Tổng giá trị ước tính</span>
+                  <p class="text-xl sm:text-2xl font-bold text-amber-400 tabular-nums mt-1">${formatVND(stats.totalValue)}</p>
+                </div>
+                <div class="rounded-2xl bg-[#150f19] border border-rose-900/50 p-4">
+                  <span class="text-xs text-rose-300">Đang chuẩn bị / Đã mua (${stats.prepCount})</span>
+                  <p class="text-xl sm:text-2xl font-bold text-rose-400 tabular-nums mt-1">${formatVND(stats.prepBudget)}</p>
+                </div>
+                <div class="rounded-2xl bg-[#150f19] border border-emerald-900/40 p-4">
+                  <span class="text-xs text-emerald-300">Đã trao tận tay em</span>
+                  <p class="text-2xl font-bold text-emerald-400 tabular-nums mt-1">${stats.giftedCount} món</p>
+                </div>
+              </div>
+
+              <!-- Multi-Filter Bar -->
+              <div class="rounded-2xl bg-[#150f19] border border-zinc-800/90 p-4 space-y-3">
+                <div class="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                  <input id="flt-search" type="text" value="${escapeHtml(state.filters.search)}" placeholder="🔍 Tìm tên quà, ghi chú..." class="w-full rounded-xl bg-[#1d1522] border border-zinc-800 focus:border-rose-500 px-3.5 py-2 text-xs sm:text-sm text-white placeholder:text-zinc-500 outline-none" />
+                  <select id="flt-category" class="w-full rounded-xl bg-[#1d1522] border border-zinc-800 focus:border-rose-500 px-3 py-2 text-xs sm:text-sm text-zinc-200 outline-none">
+                    <option value="all">Tất cả danh mục</option>
+                    ${CATEGORY_OPTIONS.map(c => `<option value="${c.key}" ${state.filters.category === c.key ? 'selected' : ''}>${c.emoji} ${c.label}</option>`).join('')}
+                  </select>
+                  <select id="flt-priority" class="w-full rounded-xl bg-[#1d1522] border border-zinc-800 focus:border-rose-500 px-3 py-2 text-xs sm:text-sm text-zinc-200 outline-none">
+                    <option value="all">Mọi độ ưu tiên</option>
+                    ${PRIORITY_OPTIONS.map(p => `<option value="${p.key}" ${state.filters.priority === p.key ? 'selected' : ''}>${p.emoji} ${p.label}</option>`).join('')}
+                  </select>
+                  <select id="flt-sort" class="w-full rounded-xl bg-[#1d1522] border border-zinc-800 focus:border-rose-500 px-3 py-2 text-xs sm:text-sm text-zinc-200 outline-none">
+                    <option value="priority_desc" ${state.filters.sort === 'priority_desc' ? 'selected' : ''}>Ưu tiên cao nhất trước</option>
+                    <option value="newest" ${state.filters.sort === 'newest' ? 'selected' : ''}>Mới thêm gần đây</option>
+                    <option value="price_asc" ${state.filters.sort === 'price_asc' ? 'selected' : ''}>Giá thấp đến cao</option>
+                    <option value="price_desc" ${state.filters.sort === 'price_desc' ? 'selected' : ''}>Giá cao đến thấp</option>
+                  </select>
+                </div>
+
+                <div class="flex flex-wrap items-center gap-2 pt-1">
+                  <button type="button" data-flt-status="all" class="btn-flt-status px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${state.filters.status === 'all' ? 'bg-rose-500 text-white border-rose-500' : 'bg-[#1d1522] text-zinc-400 border-zinc-800 hover:text-zinc-200'}">
+                    Tất cả trạng thái (${state.wishes.length})
+                  </button>
+                  ${STATUS_OPTIONS.map(st => {
+                    const count = state.wishes.filter(w => (w.status || 'pending') === st.key).length;
+                    return `
+                      <button type="button" data-flt-status="${st.key}" class="btn-flt-status px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${state.filters.status === st.key ? 'bg-rose-500 text-white border-rose-500' : 'bg-[#1d1522] text-zinc-400 border-zinc-800 hover:text-zinc-200'}">
+                        ${st.shortLabel} (${count})
+                      </button>
+                    `;
+                  }).join('')}
+                </div>
+              </div>
+
+              <!-- Wishes List -->
+              <div class="space-y-3.5">
+                ${filteredWishes.length === 0 ? `
+                  <div class="rounded-2xl bg-[#150f19] border border-zinc-800/80 py-14 px-4 text-center space-y-2">
+                    <p class="text-base font-medium text-zinc-300">Không có món quà nào khớp với bộ lọc hiện tại</p>
+                    <p class="text-xs text-zinc-500">Hãy thử chọn lại bộ lọc hoặc bốc thăm ngẫu nhiên nhé!</p>
+                  </div>
+                ` : filteredWishes.map(w => {
+                  const pri = getPriority(w.priority);
+                  const cat = getCategory(w.category);
+                  const st = getStatus(w.status);
+                  const isEditingSecret = state.editingSecretId === w.id;
+                  return `
+                    <div class="rounded-2xl bg-[#150f19] border border-zinc-800/90 hover:border-rose-900/50 p-5 space-y-4 transition-all">
+                      <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                        <div class="space-y-1.5">
+                          <div class="flex flex-wrap items-center gap-2">
+                            <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs border ${pri.badgeClass}">${pri.emoji} ${pri.label}</span>
+                            <span class="text-xs text-zinc-300 bg-zinc-900 border border-zinc-800 px-2.5 py-0.5 rounded-full">${cat.emoji} ${cat.label}</span>
+                            <span class="text-xs px-2.5 py-0.5 rounded-full border ${st.badgeClass}">${st.label}</span>
+                          </div>
+                          <h3 class="text-lg font-bold text-white">${escapeHtml(w.title)}</h3>
+                          ${w.notes ? `<p class="text-xs sm:text-sm text-zinc-300">Lời nhắn của em: <span class="text-rose-200">${escapeHtml(w.notes)}</span></p>` : ''}
+                        </div>
+                        <div class="flex sm:flex-col items-center sm:items-end justify-between gap-2 shrink-0">
+                          <span class="text-lg sm:text-xl font-bold text-amber-400 tabular-nums">${formatVND(w.price)}</span>
+                          ${w.product_link ? `<a href="${escapeHtml(w.product_link)}" target="_blank" rel="noopener noreferrer" class="px-3 py-1.5 rounded-xl bg-rose-950/60 hover:bg-rose-900/70 border border-rose-800/50 text-xs font-semibold text-rose-200">Mở link mua ↗</a>` : ''}
+                        </div>
+                      </div>
+
+                      <!-- Secret Note -->
+                      <div class="rounded-xl bg-[#1c1422] border border-zinc-800/80 p-3">
+                        ${isEditingSecret ? `
+                          <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                            <input id="inp-secret-note" type="text" value="${escapeHtml(state.secretNoteDraft)}" placeholder="Ghi chú bí mật của anh (nơi cất quà, ngày tặng, mã vận đơn...)" class="flex-1 rounded-lg bg-[#120c16] border border-zinc-700 px-3 py-2 text-xs sm:text-sm text-white outline-none focus:border-rose-500" />
+                            <div class="flex items-center gap-2 justify-end">
+                              <button type="button" id="btn-cancel-secret" class="px-3 py-2 rounded-lg bg-zinc-800 text-xs text-zinc-300">Hủy</button>
+                              <button type="button" data-save-secret="${w.id}" class="btn-save-secret px-3.5 py-2 rounded-lg bg-rose-500 hover:bg-rose-600 text-xs font-semibold text-white">Lưu ghi chú</button>
+                            </div>
+                          </div>
+                        ` : `
+                          <div class="flex items-center justify-between gap-2">
+                            <p class="text-xs text-zinc-400">
+                              <span class="font-semibold text-rose-300">Ghi chú bí mật của anh: </span>
+                              ${w.secret_note ? `<span class="text-zinc-200">${escapeHtml(w.secret_note)}</span>` : `<span class="italic text-zinc-500">Chưa có ghi chú riêng tư</span>`}
+                            </p>
+                            <button type="button" data-edit-secret="${w.id}" class="btn-edit-secret text-xs text-rose-400 hover:text-rose-300 shrink-0">✏️ Ghi chú</button>
+                          </div>
+                        `}
+                      </div>
+
+                      <div class="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-zinc-800/60">
+                        <div class="flex flex-wrap items-center gap-1.5">
+                          ${STATUS_OPTIONS.map(opt => `
+                            <button type="button" data-id="${w.id}" data-status="${opt.key}" class="btn-status px-3 py-1.5 rounded-xl text-xs font-medium border transition-all active:scale-[0.98] ${(w.status || 'pending') === opt.key ? 'bg-rose-500 text-white border-rose-500 shadow-[0_2px_12px_rgba(244,63,94,0.3)]' : 'bg-[#1d1522] border-zinc-800 text-zinc-400 hover:text-zinc-200'}">${opt.shortLabel}</button>
+                          `).join('')}
+                        </div>
+                        <button type="button" data-delete-id="${w.id}" class="btn-delete px-2.5 py-1.5 rounded-xl text-xs text-zinc-400 hover:text-rose-300">🗑️ Xóa</button>
+                      </div>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            </section>
+          `}
+        </main>
+
+        <!-- MODAL PIN -->
+        ${state.pinModalOpen ? `
+          <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+            <div class="w-full max-w-md rounded-2xl bg-[#150f19] border border-rose-900/60 p-6 shadow-2xl space-y-4">
+              <div class="flex items-center justify-between">
+                <div>
+                  <h3 class="font-serif text-xl font-bold text-white">🔒 Khu Vực Bí Mật Của Anh</h3>
+                  <p class="text-xs text-zinc-400 mt-0.5">Bảo vệ những món quà bất ngờ dành cho em</p>
+                </div>
+                <button id="btn-close-pin" type="button" class="px-2.5 py-1 rounded-xl bg-zinc-800 text-xs text-zinc-300">✕</button>
+              </div>
+              <form id="pin-form" class="space-y-4">
+                <input id="inp-pin" type="password" inputmode="numeric" autofocus value="${escapeHtml(state.pinInput)}" placeholder="••••" class="w-full rounded-xl bg-[#1d1522] border border-zinc-700 focus:border-rose-500 px-4 py-3 text-center text-xl tracking-[0.4em] font-bold text-white tabular-nums outline-none" />
+                ${state.pinError ? `<div class="rounded-xl bg-rose-950/80 border border-rose-700/70 px-3.5 py-2.5 text-xs text-rose-200">${escapeHtml(state.pinError)}</div>` : ''}
+                <div class="flex items-center gap-2 pt-1">
+                  <button id="btn-cancel-pin" type="button" class="flex-1 py-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs sm:text-sm font-semibold text-zinc-300">Quay lại</button>
+                  <button type="submit" class="flex-1 py-3 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600 text-xs sm:text-sm font-semibold text-white shadow-[0_4px_20px_rgba(244,63,94,0.35)]">Mở Bảng Quà</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        ` : ''}
+
+        <!-- DRAWER GIỎ QUÀ CỦA EM -->
+        ${state.drawerOpen ? `
+          <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
+            <div class="w-full max-w-2xl max-h-[88dvh] rounded-2xl bg-[#150f19] border border-rose-900/50 shadow-2xl flex flex-col overflow-hidden">
+              <div class="px-6 py-4 border-b border-zinc-800 flex items-center justify-between">
+                <h3 class="font-serif text-xl sm:text-2xl font-bold text-rose-100">💖 Giỏ Quà Ước Mơ Của Em (${state.wishes.length})</h3>
+                <button id="btn-close-drawer" type="button" class="px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs text-zinc-300">Đóng ✕</button>
+              </div>
+              <div class="p-5 sm:p-6 overflow-y-auto space-y-4 flex-1">
+                <p class="text-xs sm:text-sm text-zinc-400">Em có thể xem lại, chỉnh sửa thông tin món quà hoặc xóa nếu đổi ý nha. Trạng thái chuẩn bị quà của anh được giữ bí mật để tạo bất ngờ cho em ♥</p>
+                ${state.wishes.length === 0 ? `
+                  <div class="py-12 text-center space-y-2">
+                    <p class="text-zinc-300 font-medium">Giỏ quà ước mơ đang trống nè</p>
+                    <p class="text-xs text-zinc-500">Em hãy thêm món quà đầu tiên vào danh sách nhé!</p>
+                  </div>
+                ` : state.wishes.map(w => {
+                  const pri = getPriority(w.priority);
+                  const cat = getCategory(w.category);
+                  if (state.editingId === w.id && state.editDraft) {
+                    const d = state.editDraft;
+                    return `
+                      <div class="rounded-2xl bg-[#1d1522] border border-rose-500/50 p-4 space-y-3">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <input id="ed-title" type="text" value="${escapeHtml(d.title)}" class="w-full rounded-xl bg-[#140e18] border border-zinc-700 px-3 py-2 text-sm text-white outline-none focus:border-rose-500" placeholder="Tên món quà" />
+                          <input id="ed-price" type="text" inputmode="numeric" value="${escapeHtml(d.priceDisplay)}" class="w-full rounded-xl bg-[#140e18] border border-zinc-700 px-3 py-2 text-sm text-white tabular-nums outline-none focus:border-rose-500" placeholder="Giá ước tính" />
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <select id="ed-cat" class="w-full rounded-xl bg-[#140e18] border border-zinc-700 px-3 py-2 text-sm text-white outline-none">
+                            ${CATEGORY_OPTIONS.map(c => `<option value="${c.key}" ${d.category === c.key ? 'selected' : ''}>${c.emoji} ${c.label}</option>`).join('')}
+                          </select>
+                          <select id="ed-pri" class="w-full rounded-xl bg-[#140e18] border border-zinc-700 px-3 py-2 text-sm text-white outline-none">
+                            ${PRIORITY_OPTIONS.map(p => `<option value="${p.key}" ${d.priority === p.key ? 'selected' : ''}>${p.emoji} ${p.label}</option>`).join('')}
+                          </select>
+                        </div>
+                        <input id="ed-link" type="url" value="${escapeHtml(d.product_link)}" class="w-full rounded-xl bg-[#140e18] border border-zinc-700 px-3 py-2 text-sm text-white outline-none" placeholder="Link sản phẩm" />
+                        <input id="ed-notes" type="text" value="${escapeHtml(d.notes)}" class="w-full rounded-xl bg-[#140e18] border border-zinc-700 px-3 py-2 text-sm text-white outline-none" placeholder="Ghi chú màu sắc, size..." />
+                        <div class="flex justify-end gap-2 pt-1">
+                          <button type="button" id="btn-cancel-edit" class="px-3.5 py-2 rounded-xl bg-zinc-800 text-xs text-zinc-300">Hủy</button>
+                          <button type="button" id="btn-save-edit" class="px-4 py-2 rounded-xl bg-rose-500 hover:bg-rose-600 text-xs font-semibold text-white">Lưu thay đổi</button>
+                        </div>
+                      </div>
+                    `;
+                  }
+                  return `
+                    <div class="rounded-2xl bg-[#1b1320] border border-zinc-800/80 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div class="space-y-1.5">
+                        <div class="flex flex-wrap items-center gap-2">
+                          <span class="px-2.5 py-0.5 rounded-full text-xs border ${pri.badgeClass}">${pri.emoji} ${pri.label}</span>
+                          <span class="text-xs text-zinc-400 bg-zinc-900 border border-zinc-800 px-2.5 py-0.5 rounded-full">${cat.emoji} ${cat.label}</span>
+                          <span class="text-xs text-rose-300/90 bg-rose-950/40 border border-rose-900/40 px-2.5 py-0.5 rounded-full">💌 Đã gửi vào tim anh</span>
+                        </div>
+                        <h4 class="font-semibold text-base text-white">${escapeHtml(w.title)}</h4>
+                        ${w.notes ? `<p class="text-xs text-zinc-400">Ghi chú: ${escapeHtml(w.notes)}</p>` : ''}
+                        <div class="flex items-center gap-3 pt-1">
+                          <span class="text-sm font-bold text-amber-400 tabular-nums">${formatVND(w.price)}</span>
+                          ${w.product_link ? `<a href="${escapeHtml(w.product_link)}" target="_blank" rel="noopener noreferrer" class="text-xs text-rose-400 hover:text-rose-300 underline">Xem link sản phẩm ↗</a>` : ''}
+                        </div>
+                      </div>
+                      <div class="flex items-center gap-2 self-end sm:self-center shrink-0">
+                        <button type="button" data-start-edit="${w.id}" class="btn-start-edit px-3 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs font-medium text-zinc-200">✏️ Sửa</button>
+                        <button type="button" data-delete-id="${w.id}" class="btn-delete px-3 py-2 rounded-xl bg-rose-950/60 hover:bg-rose-900/80 border border-rose-800/50 text-xs font-medium text-rose-200">🗑️ Xóa</button>
+                      </div>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            </div>
+          </div>
+        ` : ''}
+
+        <!-- LUCKY PICKER MODAL -->
+        ${state.luckyModalOpen ? `
+          <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+            <div class="w-full max-w-lg rounded-2xl bg-[#150f19] border border-rose-800/60 p-6 shadow-2xl space-y-5">
+              <div class="flex items-center justify-between border-b border-zinc-800 pb-4">
+                <div>
+                  <h3 class="font-serif text-xl sm:text-2xl font-bold text-white">🎁 Bốc Thăm Quà Bất Ngờ</h3>
+                  <p class="text-xs text-zinc-400">Chọn ngẫu nhiên 1 món quà may mắn trong danh sách chưa mua</p>
+                </div>
+                <button id="btn-close-lucky" type="button" class="px-3 py-1.5 rounded-xl bg-zinc-800 text-xs text-zinc-300">✕</button>
+              </div>
+
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div class="space-y-1">
+                  <label class="text-xs text-zinc-300">Ngân sách tối đa</label>
+                  <select id="lucky-budget" class="w-full rounded-xl bg-[#1d1522] border border-zinc-700 px-3 py-2 text-xs sm:text-sm text-white outline-none">
+                    <option value="0" ${state.luckyBudget === 0 ? 'selected' : ''}>Mọi mức giá</option>
+                    <option value="300000" ${state.luckyBudget === 300000 ? 'selected' : ''}>Dưới 300,000 ₫</option>
+                    <option value="500000" ${state.luckyBudget === 500000 ? 'selected' : ''}>Dưới 500,000 ₫</option>
+                    <option value="1000000" ${state.luckyBudget === 1000000 ? 'selected' : ''}>Dưới 1,000,000 ₫</option>
+                    <option value="2000000" ${state.luckyBudget === 2000000 ? 'selected' : ''}>Dưới 2,000,000 ₫</option>
+                  </select>
+                </div>
+                <div class="space-y-1">
+                  <label class="text-xs text-zinc-300">Lọc theo độ ưu tiên</label>
+                  <select id="lucky-priority" class="w-full rounded-xl bg-[#1d1522] border border-zinc-700 px-3 py-2 text-xs sm:text-sm text-white outline-none">
+                    <option value="all" ${state.luckyPriority === 'all' ? 'selected' : ''}>Tất cả mức độ ưu tiên</option>
+                    ${PRIORITY_OPTIONS.map(p => `<option value="${p.key}" ${state.luckyPriority === p.key ? 'selected' : ''}>${p.emoji} ${p.label}</option>`).join('')}
+                  </select>
+                </div>
+              </div>
+
+              <div class="rounded-2xl bg-[#1c1322] border border-rose-900/50 p-5 min-h-[160px] flex flex-col items-center justify-center text-center">
+                ${state.luckySpinning ? `
+                  <p class="text-xs uppercase tracking-widest text-rose-400 font-semibold mb-2">Đang xoay vòng quay định mệnh...</p>
+                  <p class="font-serif text-2xl font-bold text-white">${escapeHtml(state.luckyHighlight)}</p>
+                ` : state.luckyPicked ? `
+                  <div class="w-full space-y-3 text-left">
+                    <div class="flex items-center justify-between">
+                      <span class="text-xs font-semibold text-rose-300 bg-rose-950/80 border border-rose-800/60 px-2.5 py-1 rounded-full">✨ Món quà may mắn được chọn</span>
+                      <span class="text-xs text-zinc-400">${getPriority(state.luckyPicked.priority).emoji} ${getPriority(state.luckyPicked.priority).label}</span>
+                    </div>
+                    <h4 class="font-serif text-2xl font-bold text-white">${escapeHtml(state.luckyPicked.title)}</h4>
+                    <p class="text-base font-bold text-amber-400 tabular-nums">${formatVND(state.luckyPicked.price)}</p>
+                    ${state.luckyPicked.notes ? `<p class="text-xs text-zinc-300 bg-black/30 rounded-xl p-2.5">Ghi chú của em: ${escapeHtml(state.luckyPicked.notes)}</p>` : ''}
+                    <div class="flex items-center gap-2 pt-2">
+                      <button id="btn-accept-lucky" type="button" class="flex-1 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold active:scale-[0.98]">✅ Chốt chuẩn bị bí mật món này</button>
+                      ${state.luckyPicked.product_link ? `<a href="${escapeHtml(state.luckyPicked.product_link)}" target="_blank" class="py-2.5 px-3.5 rounded-xl bg-zinc-800 text-rose-300 text-xs font-semibold">Mở link ↗</a>` : ''}
+                    </div>
+                  </div>
+                ` : `
+                  <p class="text-sm text-zinc-300 font-medium">Có <span class="text-rose-400 font-bold tabular-nums">${eligibleLucky.length}</span> món quà phù hợp để bốc thăm</p>
+                  <p class="text-xs text-zinc-500 mt-1">Nhấn nút bên dưới để chọn ra món quà bất ngờ cho em nha!</p>
+                `}
+              </div>
+
+              <button id="btn-spin-lucky" type="button" ${eligibleLucky.length === 0 || state.luckySpinning ? 'disabled' : ''} class="w-full py-3.5 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600 disabled:opacity-50 text-white font-semibold text-sm active:scale-[0.98]">
+                ${state.luckySpinning ? 'Đang chọn quà...' : state.luckyPicked ? '✨ Bốc thăm lại món khác' : '✨ Quay chọn món quà may mắn ngay'}
+              </button>
+            </div>
+          </div>
+        ` : ''}
+      `;
+
+      bindEvents(eligibleLucky);
+    }
+
+    function bindEvents(eligibleLucky) {
+      const tabEm = document.getElementById("tab-em");
+      if (tabEm) tabEm.onclick = () => { state.activeTab = "em"; render(); };
+
+      const tabAnh = document.getElementById("tab-anh");
+      if (tabAnh) tabAnh.onclick = () => {
+        if (state.isUnlocked) { state.activeTab = "anh"; render(); }
+        else { state.pinModalOpen = true; state.pinError = ""; render(); }
+      };
+
+      const btnOpenDrawer = document.getElementById("btn-open-drawer");
+      if (btnOpenDrawer) btnOpenDrawer.onclick = () => { state.drawerOpen = true; render(); };
+
+      const btnSuccessOpenDrawer = document.getElementById("btn-success-open-drawer");
+      if (btnSuccessOpenDrawer) btnSuccessOpenDrawer.onclick = () => { state.drawerOpen = true; render(); };
+
+      const btnCloseDrawer = document.getElementById("btn-close-drawer");
+      if (btnCloseDrawer) btnCloseDrawer.onclick = () => { state.drawerOpen = false; state.editingId = null; render(); };
+
+      const inpTitle = document.getElementById("inp-title");
+      if (inpTitle) inpTitle.oninput = (e) => { state.form.title = e.target.value; };
+
+      const inpCat = document.getElementById("inp-category");
+      if (inpCat) inpCat.onchange = (e) => { state.form.category = e.target.value; };
+
+      const inpPrice = document.getElementById("inp-price");
+      if (inpPrice) inpPrice.oninput = (e) => {
+        state.form.priceDisplay = formatNumberInput(e.target.value);
+        e.target.value = state.form.priceDisplay;
+      };
+
+      const inpLink = document.getElementById("inp-link");
+      if (inpLink) inpLink.oninput = (e) => { state.form.product_link = e.target.value; };
+
+      const inpNotes = document.getElementById("inp-notes");
+      if (inpNotes) inpNotes.oninput = (e) => { state.form.notes = e.target.value; };
+
+      document.querySelectorAll(".btn-priority").forEach(btn => {
+        btn.onclick = () => {
+          state.form.priority = btn.getAttribute("data-priority");
+          render();
+        };
+      });
+
+      const form = document.getElementById("wish-form");
+      if (form) form.onsubmit = async (e) => {
+        e.preventDefault();
+        if (!state.form.title.trim()) {
+          state.form.error = "Em ơi, hãy nhập tên món quà em thích nhé!";
+          state.form.success = "";
+          render();
+          return;
+        }
+        const newWish = {
+          id: crypto.randomUUID ? crypto.randomUUID() : ("w-" + Date.now()),
+          title: state.form.title.trim(),
+          category: state.form.category,
+          price: parseNumberInput(state.form.priceDisplay),
+          priority: state.form.priority,
+          product_link: state.form.product_link.trim(),
+          notes: state.form.notes.trim(),
+          status: "pending",
+          secret_note: "",
+          is_deleted: false,
+          created_at: new Date().toISOString()
+        };
+
+        if (state.sbClient) {
+          const { data } = await state.sbClient.from("wishes").insert([newWish]).select("*").single();
+          if (data) Object.assign(newWish, data);
+        }
+
+        state.wishes.unshift(newWish);
+        saveLocalWishes(state.wishes);
+        pushGoogleSheetWebhook("CREATE", newWish);
+
+        state.form.title = "";
+        state.form.priceDisplay = "500,000";
+        state.form.product_link = "";
+        state.form.notes = "";
+        state.form.error = "";
+        state.form.success = "Đã gửi vào danh sách ước mơ! Anh đã ghi nhớ món quà này rồi nha ♥";
+        if (window.confetti) confetti({ particleCount: 55, spread: 65, origin: { y: 0.72 } });
+        render();
+      };
+
+      // Edit inside drawer
+      document.querySelectorAll(".btn-start-edit").forEach(btn => {
+        btn.onclick = () => {
+          const id = btn.getAttribute("data-start-edit");
+          const target = state.wishes.find(w => w.id === id);
+          if (target) {
+            state.editingId = id;
+            state.editDraft = {
+              title: target.title,
+              category: target.category,
+              priceDisplay: formatNumberInput(target.price),
+              priority: target.priority,
+              product_link: target.product_link || "",
+              notes: target.notes || ""
+            };
+            render();
+          }
+        };
+      });
+
+      const btnCancelEdit = document.getElementById("btn-cancel-edit");
+      if (btnCancelEdit) btnCancelEdit.onclick = () => { state.editingId = null; state.editDraft = null; render(); };
+
+      const btnSaveEdit = document.getElementById("btn-save-edit");
+      if (btnSaveEdit) btnSaveEdit.onclick = async () => {
+        const id = state.editingId;
+        const target = state.wishes.find(w => w.id === id);
+        if (!target) return;
+        const titleVal = document.getElementById("ed-title").value.trim();
+        if (!titleVal) return;
+        target.title = titleVal;
+        target.price = parseNumberInput(document.getElementById("ed-price").value);
+        target.category = document.getElementById("ed-cat").value;
+        target.priority = document.getElementById("ed-pri").value;
+        target.product_link = document.getElementById("ed-link").value.trim();
+        target.notes = document.getElementById("ed-notes").value.trim();
+
+        saveLocalWishes(state.wishes);
+        if (state.sbClient) {
+          await state.sbClient.from("wishes").update({
+            title: target.title,
+            price: target.price,
+            category: target.category,
+            priority: target.priority,
+            product_link: target.product_link,
+            notes: target.notes
+          }).eq("id", id);
+        }
+        pushGoogleSheetWebhook("UPDATE", target);
+        state.editingId = null;
+        state.editDraft = null;
+        render();
+      };
+
+      // PIN Modal
+      const btnClosePin = document.getElementById("btn-close-pin");
+      const btnCancelPin = document.getElementById("btn-cancel-pin");
+      if (btnClosePin) btnClosePin.onclick = () => { state.pinModalOpen = false; render(); };
+      if (btnCancelPin) btnCancelPin.onclick = () => { state.pinModalOpen = false; render(); };
+
+      const inpPin = document.getElementById("inp-pin");
+      if (inpPin) inpPin.oninput = (e) => { state.pinInput = e.target.value; };
+
+      const pinForm = document.getElementById("pin-form");
+      if (pinForm) pinForm.onsubmit = (e) => {
+        e.preventDefault();
+        if (state.pinInput.trim() === state.adminPin) {
+          state.isUnlocked = true;
+          sessionStorage.setItem(PIN_SESSION_KEY, "true");
+          state.pinModalOpen = false;
+          state.pinInput = "";
+          state.activeTab = "anh";
+          render();
+        } else {
+          state.pinError = "Mã PIN chưa đúng rồi! Khu vực này giữ bí mật bất ngờ cho em nha ♥";
+          render();
+        }
+      };
+
+      const btnLockPin = document.getElementById("btn-lock-pin");
+      if (btnLockPin) btnLockPin.onclick = () => {
+        state.isUnlocked = false;
+        sessionStorage.removeItem(PIN_SESSION_KEY);
+        state.activeTab = "em";
+        render();
+      };
+
+      // Config Panel
+      const btnToggleConfig = document.getElementById("btn-toggle-config");
+      if (btnToggleConfig) btnToggleConfig.onclick = () => { state.configOpen = !state.configOpen; render(); };
+      const btnCloseConfig = document.getElementById("btn-close-config");
+      if (btnCloseConfig) btnCloseConfig.onclick = () => { state.configOpen = false; render(); };
+      const btnSaveConfig = document.getElementById("btn-save-config");
+      if (btnSaveConfig) btnSaveConfig.onclick = () => {
+        state.webhookUrl = document.getElementById("inp-webhook").value.trim();
+        state.adminPin = document.getElementById("inp-custom-pin").value.trim() || "2410";
+        state.sbUrl = document.getElementById("inp-sb-url").value.trim();
+        state.sbKey = document.getElementById("inp-sb-key").value.trim();
+        localStorage.setItem(WEBHOOK_KEY, state.webhookUrl);
+        localStorage.setItem(CUSTOM_PIN_KEY, state.adminPin);
+        localStorage.setItem(SUPABASE_URL_KEY, state.sbUrl);
+        localStorage.setItem(SUPABASE_ANON_KEY, state.sbKey);
+        initSupabaseClient();
+        state.configOpen = false;
+        render();
+      };
+
+      // Filters
+      const fltSearch = document.getElementById("flt-search");
+      if (fltSearch) fltSearch.oninput = (e) => {
+        state.filters.search = e.target.value;
+        const pos = e.target.selectionStart;
+        render();
+        const nextInp = document.getElementById("flt-search");
+        if (nextInp) { nextInp.focus(); nextInp.setSelectionRange(pos, pos); }
+      };
+      const fltCat = document.getElementById("flt-category");
+      if (fltCat) fltCat.onchange = (e) => { state.filters.category = e.target.value; render(); };
+      const fltPri = document.getElementById("flt-priority");
+      if (fltPri) fltPri.onchange = (e) => { state.filters.priority = e.target.value; render(); };
+      const fltSort = document.getElementById("flt-sort");
+      if (fltSort) fltSort.onchange = (e) => { state.filters.sort = e.target.value; render(); };
+
+      document.querySelectorAll(".btn-flt-status").forEach(btn => {
+        btn.onclick = () => {
+          state.filters.status = btn.getAttribute("data-flt-status");
+          render();
+        };
+      });
+
+      // Secret Note
+      document.querySelectorAll(".btn-edit-secret").forEach(btn => {
+        btn.onclick = () => {
+          const id = btn.getAttribute("data-edit-secret");
+          const item = state.wishes.find(w => w.id === id);
+          if (item) {
+            state.editingSecretId = id;
+            state.secretNoteDraft = item.secret_note || "";
+            render();
+          }
+        };
+      });
+      const inpSecret = document.getElementById("inp-secret-note");
+      if (inpSecret) inpSecret.oninput = (e) => { state.secretNoteDraft = e.target.value; };
+      const btnCancelSecret = document.getElementById("btn-cancel-secret");
+      if (btnCancelSecret) btnCancelSecret.onclick = () => { state.editingSecretId = null; render(); };
+      document.querySelectorAll(".btn-save-secret").forEach(btn => {
+        btn.onclick = async () => {
+          const id = btn.getAttribute("data-save-secret");
+          const item = state.wishes.find(w => w.id === id);
+          if (item) {
+            item.secret_note = state.secretNoteDraft.trim();
+            saveLocalWishes(state.wishes);
+            if (state.sbClient) {
+              await state.sbClient.from("wishes").update({ secret_note: item.secret_note }).eq("id", id);
+            }
+            pushGoogleSheetWebhook("UPDATE", item);
+            state.editingSecretId = null;
+            render();
+          }
+        };
+      });
+
+      // Lucky Picker
+      const btnOpenLucky = document.getElementById("btn-open-lucky");
+      if (btnOpenLucky) btnOpenLucky.onclick = () => { state.luckyModalOpen = true; state.luckyPicked = null; render(); };
+      const btnCloseLucky = document.getElementById("btn-close-lucky");
+      if (btnCloseLucky) btnCloseLucky.onclick = () => { state.luckyModalOpen = false; render(); };
+      const luckyBudget = document.getElementById("lucky-budget");
+      if (luckyBudget) luckyBudget.onchange = (e) => { state.luckyBudget = Number(e.target.value); state.luckyPicked = null; render(); };
+      const luckyPri = document.getElementById("lucky-priority");
+      if (luckyPri) luckyPri.onchange = (e) => { state.luckyPriority = e.target.value; state.luckyPicked = null; render(); };
+
+      const btnSpinLucky = document.getElementById("btn-spin-lucky");
+      if (btnSpinLucky) btnSpinLucky.onclick = () => {
+        if (!eligibleLucky || eligibleLucky.length === 0 || state.luckySpinning) return;
+        state.luckySpinning = true;
+        state.luckyPicked = null;
+        let ticks = 0;
+        const timer = setInterval(() => {
+          const rand = eligibleLucky[Math.floor(Math.random() * eligibleLucky.length)];
+          state.luckyHighlight = rand.title;
+          ticks++;
+          render();
+          if (ticks >= 14) {
+            clearInterval(timer);
+            state.luckyPicked = eligibleLucky[Math.floor(Math.random() * eligibleLucky.length)];
+            state.luckySpinning = false;
+            if (window.confetti) confetti({ particleCount: 70, spread: 80, origin: { y: 0.6 } });
+            render();
+          }
+        }, 80);
+      };
+
+      const btnAcceptLucky = document.getElementById("btn-accept-lucky");
+      if (btnAcceptLucky) btnAcceptLucky.onclick = async () => {
+        if (!state.luckyPicked) return;
+        const item = state.wishes.find(w => w.id === state.luckyPicked.id);
+        if (item) {
+          item.status = "secret_prep";
+          saveLocalWishes(state.wishes);
+          if (state.sbClient) {
+            await state.sbClient.from("wishes").update({ status: "secret_prep" }).eq("id", item.id);
+          }
+          pushGoogleSheetWebhook("UPDATE", item);
+        }
+        state.luckyModalOpen = false;
+        render();
+      };
+
+      // Status & Delete
+      document.querySelectorAll(".btn-status").forEach(btn => {
+        btn.onclick = async () => {
+          const id = btn.getAttribute("data-id");
+          const st = btn.getAttribute("data-status");
+          const item = state.wishes.find(w => w.id === id);
+          if (item) {
+            item.status = st;
+            saveLocalWishes(state.wishes);
+            if (state.sbClient) {
+              await state.sbClient.from("wishes").update({ status: st }).eq("id", id);
+            }
+            pushGoogleSheetWebhook("UPDATE", item);
+            render();
+          }
+        };
+      });
+
+      document.querySelectorAll(".btn-delete").forEach(btn => {
+        btn.onclick = async () => {
+          const id = btn.getAttribute("data-delete-id");
+          const target = state.wishes.find(w => w.id === id);
+          state.wishes = state.wishes.filter(w => w.id !== id);
+          saveLocalWishes(state.wishes);
+          if (state.sbClient) {
+            await state.sbClient.from("wishes").update({ is_deleted: true }).eq("id", id);
+          }
+          if (target) pushGoogleSheetWebhook("DELETE", target);
+          render();
+        };
+      });
+    }
+
+    initSupabaseClient();
+    render();
+  </script>
+</body>
+</html>
