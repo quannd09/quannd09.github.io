@@ -1212,14 +1212,6 @@
             </section>
           `}
         </main>
-                <div class="flex items-center gap-2 pt-1">
-                  <button id="btn-cancel-pin" type="button" class="flex-1 py-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs sm:text-sm font-semibold text-zinc-300">Quay lại</button>
-                  <button type="submit" class="flex-1 py-3 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600 text-xs sm:text-sm font-semibold text-white shadow-[0_4px_20px_rgba(244,63,94,0.35)]">Mở Bảng Quà</button>
-                </div>
-              </form>
-            </div>
-          </div>
-        ` : ''}
 
         <!-- DRAWER GIỎ QUÀ CỦA EM -->
         ${state.drawerOpen ? `
@@ -1473,16 +1465,7 @@
             </div>
           </div>
         ` : ''}
-                ${state.pinChangeSuccess ? `<div class="rounded-xl bg-emerald-950/80 border border-emerald-700/70 px-3.5 py-2 text-xs text-emerald-200">Đã cập nhật mã PIN thành công!</div>` : ''}
-
-                <div class="flex items-center gap-2 pt-2">
-                  <button id="btn-cancel-change-pin" type="button" class="flex-1 py-2.5 rounded-xl bg-zinc-800 text-xs sm:text-sm font-semibold text-zinc-300">Hủy</button>
-                  <button type="submit" class="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600 text-xs sm:text-sm font-semibold text-white">Lưu Mã Mới</button>
-                </div>
-              </form>
-            </div>
-          </div>
-        ` : ''}
+              
         <!-- AUTH MODAL -->
         ${state.authModalOpen ? `
           <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
