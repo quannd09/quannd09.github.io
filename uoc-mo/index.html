@@ -934,10 +934,10 @@
           <div class="max-w-3xl mx-auto px-4 pt-3 pb-4 space-y-2">
             <div class="grid grid-cols-2 p-1.5 rounded-2xl bg-[#110b14] border border-zinc-800/80">
               <button id="tab-em" type="button" class="flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-semibold transition-all ${isAnhRole ? 'opacity-45 cursor-not-allowed text-zinc-500' : state.activeTab === 'em' ? 'bg-gradient-to-r from-rose-500 to-pink-500 text-white shadow-[0_4px_20px_rgba(244,63,94,0.4)]' : 'text-zinc-400 hover:text-zinc-200'}">
-                <span class="truncate">${isAnhRole ? '🔒 Phần thêm điều ước · Chỉ dành cho Em' : '✨ Thêm món quà yêu thích của em ✨'}</span>
+                <span class="truncate">✨ Thêm món quà yêu thích của em ✨</span>
               </button>
               <button id="tab-anh" type="button" class="flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-semibold transition-all ${isEmRole ? 'opacity-45 cursor-not-allowed text-zinc-500' : state.activeTab === 'anh' ? 'bg-gradient-to-r from-rose-500 to-pink-500 text-white shadow-[0_4px_20px_rgba(244,63,94,0.4)]' : 'text-zinc-400 hover:text-zinc-200'}">
-                <span class="truncate">${isEmRole ? '🔒 Bảng quà của Anh · Chỉ dành cho Anh' : '📑 Bảng quà của anh 💖'}</span>
+                <span class="truncate">📑 Bảng quà của anh 💖</span>
               </button>
             </div>
             ${state.roleNotice ? `
@@ -1244,7 +1244,6 @@
                             <button type="button" data-id="${w.id}" data-status="${opt.key}" class="btn-status px-3 py-1.5 rounded-xl text-xs font-medium border transition-all active:scale-[0.98] ${(w.status || 'pending') === opt.key ? 'bg-rose-500 text-white border-rose-500 shadow-[0_2px_12px_rgba(244,63,94,0.3)]' : 'bg-[#1d1522] border-zinc-800 text-zinc-400 hover:text-zinc-200'}">${opt.shortLabel}</button>
                           `).join('')}
                         </div>
-                        <span class="text-xs text-zinc-500">🔒 Chỉ Em mới có quyền sửa / xóa điều ước</span>
                       </div>
                     </div>
                   `;
@@ -1436,19 +1435,9 @@
                     <span class="px-2.5 py-0.5 rounded-full bg-rose-500/20 text-rose-300 text-xs font-semibold">Mã: #${escapeHtml(state.coupleProfile.coupleCode)}</span>
                   </div>
                   <p class="text-sm text-zinc-200">
-                    Bạn là <strong class="text-rose-300">${escapeHtml(state.coupleProfile.myName)}</strong> · vai trò <strong class="text-amber-300">${state.coupleProfile.myRole === 'anh' ? 'Anh 👦' : 'Em 👧'}</strong>,
-                    đang kết đôi cùng <strong class="text-rose-300">${escapeHtml(state.coupleProfile.partnerName)}</strong> · vai trò <strong class="text-pink-300">${state.coupleProfile.myRole === 'anh' ? 'Em 👧' : 'Anh 👦'}</strong>.
+                    Bạn là <strong class="text-rose-300">${escapeHtml(state.coupleProfile.myName)}</strong> · <strong class="text-amber-300">${state.coupleProfile.myRole === 'anh' ? 'Anh 👦' : 'Em 👧'}</strong>,
+                    đang kết đôi cùng <strong class="text-rose-300">${escapeHtml(state.coupleProfile.partnerName)}</strong> · <strong class="text-pink-300">${state.coupleProfile.myRole === 'anh' ? 'Em 👧' : 'Anh 👦'}</strong>
                   </p>
-                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
-                    <div class="rounded-xl bg-[#140d18] border border-zinc-800 p-3 space-y-1">
-                      <div class="text-xs font-bold text-amber-300">👦 Vai trò Anh: ${escapeHtml(state.coupleProfile.anhName || '')}</div>
-                      <p class="text-[11px] text-zinc-400 leading-relaxed">Xem Bảng quà của Anh, đánh dấu chuẩn bị quà & ghi chú bí mật. Không có quyền thêm hoặc sửa điều ước.</p>
-                    </div>
-                    <div class="rounded-xl bg-[#140d18] border border-zinc-800 p-3 space-y-1">
-                      <div class="text-xs font-bold text-pink-300">👧 Vai trò Em: ${escapeHtml(state.coupleProfile.emName || '')}</div>
-                      <p class="text-[11px] text-zinc-400 leading-relaxed">Thêm điều ước mới, sửa hoặc xóa điều ước trong giỏ quà. Không có quyền truy cập Bảng quà của Anh.</p>
-                    </div>
-                  </div>
                   <div class="flex flex-wrap items-center gap-2 pt-2">
                     <button id="btn-swap-couple-roles" type="button" class="flex-1 py-2 px-3 rounded-xl bg-amber-950/60 hover:bg-amber-900/70 text-xs font-semibold text-amber-200 border border-amber-700/50">🔄 Đổi vai trò Anh / Em</button>
                     <button id="btn-copy-code" type="button" class="py-2 px-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold text-zinc-200">Sao chép mã</button>
@@ -1469,15 +1458,13 @@
 
                 ${state.currentUser ? `
                   <div class="rounded-xl bg-[#1a1220] border border-zinc-800 p-4 space-y-2.5">
-                    <span class="block text-xs font-semibold text-zinc-300">Phân quyền vai trò của bạn khi ghép đôi:</span>
+                    <span class="block text-xs font-semibold text-zinc-300">Vai trò của bạn:</span>
                     <div class="grid grid-cols-2 gap-2.5">
-                      <button type="button" id="btn-couple-role-anh" class="p-2.5 rounded-xl border text-left transition-all ${state.currentUser.role === 'anh' ? 'bg-rose-500/20 border-rose-500 text-white shadow-[0_0_15px_rgba(244,63,94,0.25)]' : 'bg-[#120c16] border-zinc-800 text-zinc-400 hover:text-zinc-200'}">
-                        <div class="text-xs font-bold">👦 Tôi là Anh</div>
-                        <div class="text-[11px] opacity-80 mt-0.5">Chỉ xem Bảng quà của Anh, không thêm/sửa quà</div>
+                      <button type="button" id="btn-couple-role-anh" class="py-2.5 px-3 rounded-xl border text-center text-xs font-bold transition-all ${state.currentUser.role === 'anh' ? 'bg-rose-500 text-white border-rose-500 shadow-[0_0_15px_rgba(244,63,94,0.25)]' : 'bg-[#120c16] border-zinc-800 text-zinc-400 hover:text-zinc-200'}">
+                        👦 Anh
                       </button>
-                      <button type="button" id="btn-couple-role-em" class="p-2.5 rounded-xl border text-left transition-all ${state.currentUser.role === 'em' ? 'bg-pink-500/20 border-pink-500 text-white shadow-[0_0_15px_rgba(236,72,153,0.25)]' : 'bg-[#120c16] border-zinc-800 text-zinc-400 hover:text-zinc-200'}">
-                        <div class="text-xs font-bold">👧 Tôi là Em</div>
-                        <div class="text-[11px] opacity-80 mt-0.5">Thêm & sửa điều ước, không vào phần của Anh</div>
+                      <button type="button" id="btn-couple-role-em" class="py-2.5 px-3 rounded-xl border text-center text-xs font-bold transition-all ${state.currentUser.role === 'em' ? 'bg-pink-500 text-white border-pink-500 shadow-[0_0_15px_rgba(236,72,153,0.25)]' : 'bg-[#120c16] border-zinc-800 text-zinc-400 hover:text-zinc-200'}">
+                        👧 Em
                       </button>
                     </div>
                   </div>
