@@ -493,7 +493,7 @@
               <form id="wish-form" class="rounded-2xl bg-[#150f19] border border-zinc-800/90 p-5 sm:p-7 shadow-[0_20px_50px_rgba(0,0,0,0.6)] space-y-6">
                 <div class="space-y-2">
                   <label for="inp-title" class="block text-xs font-semibold uppercase tracking-wider text-zinc-300">♡ Tên quà tặng</label>
-                  <input id="inp-title" type="text" value="${escapeHtml(state.form.title)}" placeholder="Ví dụ: Vòng tay bạc khắc tên..." class="w-full rounded-xl bg-[#1d1522] border border-zinc-800 focus:border-rose-500 px-4 py-3 text-sm sm:text-base text-zinc-100 placeholder:text-zinc-500 outline-none transition-all" />
+                  <input id="inp-title" type="text" value="${escapeHtml(state.form.title)}" placeholder="Tên món quà" class="w-full rounded-xl bg-[#1d1522] border border-zinc-800 focus:border-rose-500 px-4 py-3 text-sm sm:text-base text-zinc-100 placeholder:text-zinc-500 outline-none transition-all" />
                 </div>
 
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
@@ -527,12 +527,12 @@
 
                 <div class="space-y-2">
                   <label for="inp-link" class="block text-xs font-semibold uppercase tracking-wider text-zinc-300">🔗 Link sản phẩm</label>
-                  <input id="inp-link" type="url" value="${escapeHtml(state.form.product_link)}" placeholder="https://shopee.vn/..." class="w-full rounded-xl bg-[#1d1522] border border-zinc-800 focus:border-rose-500 px-4 py-3 text-sm sm:text-base text-zinc-100 placeholder:text-zinc-500 outline-none" />
+                  <input id="inp-link" type="url" value="${escapeHtml(state.form.product_link)}" placeholder="https://..." class="w-full rounded-xl bg-[#1d1522] border border-zinc-800 focus:border-rose-500 px-4 py-3 text-sm sm:text-base text-zinc-100 placeholder:text-zinc-500 outline-none" />
                 </div>
 
                 <div class="space-y-2">
                   <label for="inp-notes" class="block text-xs font-semibold uppercase tracking-wider text-zinc-300">📝 Ghi chú thêm</label>
-                  <textarea id="inp-notes" rows="3" placeholder="Màu hồng nhé anh, size M..." class="w-full rounded-xl bg-[#1d1522] border border-zinc-800 focus:border-rose-500 px-4 py-3 text-sm sm:text-base text-zinc-100 placeholder:text-zinc-500 outline-none resize-none">${escapeHtml(state.form.notes)}</textarea>
+                  <textarea id="inp-notes" rows="3" placeholder="Ghi chú thêm" class="w-full rounded-xl bg-[#1d1522] border border-zinc-800 focus:border-rose-500 px-4 py-3 text-sm sm:text-base text-zinc-100 placeholder:text-zinc-500 outline-none resize-none">${escapeHtml(state.form.notes)}</textarea>
                 </div>
 
                 ${state.form.error ? `<div class="rounded-xl bg-rose-950/80 border border-rose-700/70 px-4 py-3 text-sm text-rose-200">${escapeHtml(state.form.error)}</div>` : ''}
@@ -692,7 +692,7 @@
                       <div class="rounded-xl bg-[#1c1422] border border-zinc-800/80 p-3">
                         ${isEditingSecret ? `
                           <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                            <input id="inp-secret-note" type="text" value="${escapeHtml(state.secretNoteDraft)}" placeholder="Ghi chú bí mật của anh (nơi cất quà, ngày tặng, mã vận đơn...)" class="flex-1 rounded-lg bg-[#120c16] border border-zinc-700 px-3 py-2 text-xs sm:text-sm text-white outline-none focus:border-rose-500" />
+                            <input id="inp-secret-note" type="text" value="${escapeHtml(state.secretNoteDraft)}" placeholder="Ghi chú bí mật của anh" class="flex-1 rounded-lg bg-[#120c16] border border-zinc-700 px-3 py-2 text-xs sm:text-sm text-white outline-none focus:border-rose-500" />
                             <div class="flex items-center gap-2 justify-end">
                               <button type="button" id="btn-cancel-secret" class="px-3 py-2 rounded-lg bg-zinc-800 text-xs text-zinc-300">Hủy</button>
                               <button type="button" data-save-secret="${w.id}" class="btn-save-secret px-3.5 py-2 rounded-lg bg-rose-500 hover:bg-rose-600 text-xs font-semibold text-white">Lưu ghi chú</button>
@@ -783,7 +783,7 @@
                           </select>
                         </div>
                         <input id="ed-link" type="url" value="${escapeHtml(d.product_link)}" class="w-full rounded-xl bg-[#140e18] border border-zinc-700 px-3 py-2 text-sm text-white outline-none" placeholder="Link sản phẩm" />
-                        <input id="ed-notes" type="text" value="${escapeHtml(d.notes)}" class="w-full rounded-xl bg-[#140e18] border border-zinc-700 px-3 py-2 text-sm text-white outline-none" placeholder="Ghi chú màu sắc, size..." />
+                        <input id="ed-notes" type="text" value="${escapeHtml(d.notes)}" class="w-full rounded-xl bg-[#140e18] border border-zinc-700 px-3 py-2 text-sm text-white outline-none" placeholder="Ghi chú thêm" />
                         <div class="flex justify-end gap-2 pt-1">
                           <button type="button" id="btn-cancel-edit" class="px-3.5 py-2 rounded-xl bg-zinc-800 text-xs text-zinc-300">Hủy</button>
                           <button type="button" id="btn-save-edit" class="px-4 py-2 rounded-xl bg-rose-500 hover:bg-rose-600 text-xs font-semibold text-white">Lưu thay đổi</button>
@@ -920,7 +920,7 @@
                 <form id="couple-form" class="space-y-4">
                   <div class="space-y-1">
                     <label class="block text-xs font-semibold text-zinc-300">Tên của bạn</label>
-                    <input id="inp-couple-my-name" type="text" value="${escapeHtml(state.coupleMyName)}" placeholder="Ví dụ: Anh Quân, Em Hương..." class="w-full rounded-xl bg-[#1d1522] border border-zinc-700 px-3.5 py-2.5 text-sm text-white outline-none focus:border-rose-500" required />
+                    <input id="inp-couple-my-name" type="text" value="${escapeHtml(state.coupleMyName)}" placeholder="Tên của bạn" class="w-full rounded-xl bg-[#1d1522] border border-zinc-700 px-3.5 py-2.5 text-sm text-white outline-none focus:border-rose-500" required />
                   </div>
 
                   <div class="space-y-1">
@@ -946,7 +946,7 @@
                   ` : `
                     <div class="space-y-1">
                       <label class="block text-xs font-semibold text-zinc-300">Nhập mã kết đôi từ người yêu</label>
-                      <input id="inp-couple-code" type="text" value="${escapeHtml(state.coupleCodeInput)}" placeholder="Ví dụ: LOVE-260" class="w-full rounded-xl bg-[#1d1522] border border-zinc-700 px-3.5 py-2.5 text-sm uppercase font-mono font-bold text-white outline-none focus:border-rose-500" required />
+                      <input id="inp-couple-code" type="text" value="${escapeHtml(state.coupleCodeInput)}" placeholder="Nhập mã phòng" class="w-full rounded-xl bg-[#1d1522] border border-zinc-700 px-3.5 py-2.5 text-sm uppercase font-mono font-bold text-white outline-none focus:border-rose-500" required />
                     </div>
                   `}
 
@@ -1023,7 +1023,7 @@
               <form id="auth-form" class="space-y-4">
                 <div class="space-y-1">
                   <label class="block text-xs font-semibold text-zinc-300">Tên đăng nhập</label>
-                  <input id="inp-auth-username" type="text" value="${escapeHtml(state.authUsername)}" placeholder="Ví dụ: quannd, huongle..." class="w-full rounded-xl bg-[#1d1522] border border-zinc-700 px-3.5 py-2.5 text-sm text-white outline-none focus:border-rose-500" required />
+                  <input id="inp-auth-username" type="text" value="${escapeHtml(state.authUsername)}" placeholder="Tên đăng nhập" class="w-full rounded-xl bg-[#1d1522] border border-zinc-700 px-3.5 py-2.5 text-sm text-white outline-none focus:border-rose-500" required />
                 </div>
 
                 <div class="space-y-1">
@@ -1034,7 +1034,7 @@
                 ${state.authTab === 'register' ? `
                   <div class="space-y-1">
                     <label class="block text-xs font-semibold text-zinc-300">Tên hiển thị hoặc Biệt danh</label>
-                    <input id="inp-auth-nickname" type="text" value="${escapeHtml(state.authNickname)}" placeholder="Ví dụ: Anh Quân, Bé Hương..." class="w-full rounded-xl bg-[#1d1522] border border-zinc-700 px-3.5 py-2.5 text-sm text-white outline-none focus:border-rose-500" />
+                    <input id="inp-auth-nickname" type="text" value="${escapeHtml(state.authNickname)}" placeholder="Tên hiển thị hoặc Biệt danh" class="w-full rounded-xl bg-[#1d1522] border border-zinc-700 px-3.5 py-2.5 text-sm text-white outline-none focus:border-rose-500" />
                   </div>
 
                   <div class="space-y-1">
