@@ -158,6 +158,24 @@
             acc.partnerName = expectedPartnerName;
             changed = true;
           }
+          if (!acc.role || (acc.role !== "anh" && acc.role !== "em")) {
+            acc.role = "anh";
+            changed = true;
+          }
+          if (!partner.role || (partner.role !== "anh" && partner.role !== "em")) {
+            partner.role = acc.role === "anh" ? "em" : "anh";
+            changed = true;
+          }
+          if (acc.role === partner.role) {
+            if (String(acc.id) < String(partner.id)) {
+              acc.role = "anh";
+              partner.role = "em";
+            } else {
+              acc.role = "em";
+              partner.role = "anh";
+            }
+            changed = true;
+          }
           if (acc.outgoingRequestTo) {
             acc.outgoingRequestTo = null;
             changed = true;
@@ -205,6 +223,7 @@
             fromId: other.id,
             fromUsername: other.username,
             fromNickname: other.nickname || other.username,
+            fromRole: other.role === "em" ? "em" : "anh",
             fromInviteCode: other.inviteCode,
             requestedAt: other.outgoingRequestTo.requestedAt || new Date().toISOString()
           }));
@@ -252,11 +271,18 @@
         return null;
       }
       const sharedCode = (user.coupleCode || partner.coupleCode || partner.inviteCode || user.inviteCode || "LOVE-100").toUpperCase();
+      const myRole = user.role === "em" ? "em" : "anh";
+      const partnerRole = myRole === "anh" ? "em" : "anh";
+      const myDisplayName = user.nickname || user.username;
+      const partnerDisplayName = partner.nickname || partner.username;
       return {
         coupleCode: sharedCode,
-        myRole: user.role || "anh",
-        myName: user.nickname || user.username,
-        partnerName: partner.nickname || partner.username,
+        myRole: myRole,
+        partnerRole: partnerRole,
+        myName: myDisplayName,
+        partnerName: partnerDisplayName,
+        anhName: myRole === "anh" ? myDisplayName : partnerDisplayName,
+        emName: myRole === "em" ? myDisplayName : partnerDisplayName,
         partnerId: partner.id,
         isMatched: true,
         matchedAt: user.matchedAt || partner.matchedAt || new Date().toISOString()
@@ -799,6 +825,22 @@
 
     function render() {
       const app = document.getElementById("app");
+      const activeRole = (state.coupleProfile && state.coupleProfile.myRole) || (state.currentUser && state.currentUser.role) || "em";
+      const isAnhRole = Boolean(state.currentUser && activeRole === "anh");
+      const isEmRole = Boolean(state.currentUser && activeRole === "em");
+
+      if (isAnhRole) {
+        state.activeTab = "anh";
+        state.drawerOpen = false;
+        state.editingId = null;
+        state.editDraft = null;
+      } else if (isEmRole) {
+        state.activeTab = "em";
+        state.pinModalOpen = false;
+        state.changePinModalOpen = false;
+        state.luckyModalOpen = false;
+        state.configOpen = false;
+      }
       let visibleWishes = [];
       if (state.coupleProfile && state.coupleProfile.coupleCode) {
         const activeCode = state.coupleProfile.coupleCode.toUpperCase();
@@ -872,24 +914,38 @@
                   <span>✨ Đăng nhập / Đăng ký</span>
                 </button>
               `}
-              <button id="btn-open-drawer" type="button" class="flex items-center gap-2 px-3.5 py-2 rounded-full bg-rose-950/60 hover:bg-rose-900/60 border border-rose-800/50 text-rose-200 text-xs sm:text-sm font-medium transition-all active:scale-[0.98]">
-                <span>💖</span>
-                <span class="tabular-nums font-semibold text-rose-100">${visibleWishes.length}</span>
-                <span class="hidden sm:inline">điều ước trong giỏ quà</span>
-                <span class="inline sm:hidden">điều ước</span>
-              </button>
+              ${isAnhRole ? `
+                <div class="flex items-center gap-2 px-3.5 py-2 rounded-full bg-rose-950/40 border border-rose-800/40 text-rose-200 text-xs sm:text-sm font-medium">
+                  <span>💝</span>
+                  <span class="tabular-nums font-semibold text-rose-100">${visibleWishes.length}</span>
+                  <span class="hidden sm:inline">điều ước của em</span>
+                </div>
+              ` : `
+                <button id="btn-open-drawer" type="button" class="flex items-center gap-2 px-3.5 py-2 rounded-full bg-rose-950/60 hover:bg-rose-900/60 border border-rose-800/50 text-rose-200 text-xs sm:text-sm font-medium transition-all active:scale-[0.98]">
+                  <span>💖</span>
+                  <span class="tabular-nums font-semibold text-rose-100">${visibleWishes.length}</span>
+                  <span class="hidden sm:inline">điều ước trong giỏ quà</span>
+                  <span class="inline sm:hidden">điều ước</span>
+                </button>
+              `}
             </div>
           </div>
 
-          <div class="max-w-3xl mx-auto px-4 pt-3 pb-4">
+          <div class="max-w-3xl mx-auto px-4 pt-3 pb-4 space-y-2">
             <div class="grid grid-cols-2 p-1.5 rounded-2xl bg-[#110b14] border border-zinc-800/80">
-              <button id="tab-em" type="button" class="flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-semibold transition-all active:scale-[0.98] ${state.activeTab === 'em' ? 'bg-gradient-to-r from-rose-500 to-pink-500 text-white shadow-[0_4px_20px_rgba(244,63,94,0.4)]' : 'text-zinc-400 hover:text-zinc-200'}">
-                <span class="truncate">✨ Thêm món quà yêu thích của em ✨</span>
+              <button id="tab-em" type="button" class="flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-semibold transition-all ${isAnhRole ? 'opacity-45 cursor-not-allowed text-zinc-500' : state.activeTab === 'em' ? 'bg-gradient-to-r from-rose-500 to-pink-500 text-white shadow-[0_4px_20px_rgba(244,63,94,0.4)]' : 'text-zinc-400 hover:text-zinc-200'}">
+                <span class="truncate">${isAnhRole ? '🔒 Phần thêm điều ước · Chỉ dành cho Em' : '✨ Thêm món quà yêu thích của em ✨'}</span>
               </button>
-              <button id="tab-anh" type="button" class="flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-semibold transition-all active:scale-[0.98] ${state.activeTab === 'anh' ? 'bg-gradient-to-r from-rose-500 to-pink-500 text-white shadow-[0_4px_20px_rgba(244,63,94,0.4)]' : 'text-zinc-400 hover:text-zinc-200'}">
-                <span class="truncate">📑 Bảng quà của anh 💖</span>
+              <button id="tab-anh" type="button" class="flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-semibold transition-all ${isEmRole ? 'opacity-45 cursor-not-allowed text-zinc-500' : state.activeTab === 'anh' ? 'bg-gradient-to-r from-rose-500 to-pink-500 text-white shadow-[0_4px_20px_rgba(244,63,94,0.4)]' : 'text-zinc-400 hover:text-zinc-200'}">
+                <span class="truncate">${isEmRole ? '🔒 Bảng quà của Anh · Chỉ dành cho Anh' : '📑 Bảng quà của anh 💖'}</span>
               </button>
             </div>
+            ${state.roleNotice ? `
+              <div class="rounded-xl bg-rose-950/80 border border-rose-700/70 px-4 py-2.5 text-xs text-rose-200 flex items-center justify-between gap-2">
+                <span>🔒 ${escapeHtml(state.roleNotice)}</span>
+                <button id="btn-close-role-notice" type="button" class="text-rose-300 hover:text-white font-bold">✕</button>
+              </div>
+            ` : ''}
           </div>
         </header>
 
@@ -1188,7 +1244,7 @@
                             <button type="button" data-id="${w.id}" data-status="${opt.key}" class="btn-status px-3 py-1.5 rounded-xl text-xs font-medium border transition-all active:scale-[0.98] ${(w.status || 'pending') === opt.key ? 'bg-rose-500 text-white border-rose-500 shadow-[0_2px_12px_rgba(244,63,94,0.3)]' : 'bg-[#1d1522] border-zinc-800 text-zinc-400 hover:text-zinc-200'}">${opt.shortLabel}</button>
                           `).join('')}
                         </div>
-                        <button type="button" data-delete-id="${w.id}" class="btn-delete px-2.5 py-1.5 rounded-xl text-xs text-zinc-400 hover:text-rose-300">🗑️ Xóa</button>
+                        <span class="text-xs text-zinc-500">🔒 Chỉ Em mới có quyền sửa / xóa điều ước</span>
                       </div>
                     </div>
                   `;
@@ -1279,10 +1335,14 @@
                           ${w.product_link ? `<a href="${escapeHtml(w.product_link)}" target="_blank" rel="noopener noreferrer" class="text-xs text-rose-400 hover:text-rose-300 underline">Xem link sản phẩm ↗</a>` : ''}
                         </div>
                       </div>
-                      <div class="flex items-center gap-2 self-end sm:self-center shrink-0">
-                        <button type="button" data-start-edit="${w.id}" class="btn-start-edit px-3 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs font-medium text-zinc-200">✏️ Sửa</button>
-                        <button type="button" data-delete-id="${w.id}" class="btn-delete px-3 py-2 rounded-xl bg-rose-950/60 hover:bg-rose-900/80 border border-rose-800/50 text-xs font-medium text-rose-200">🗑️ Xóa</button>
-                      </div>
+                      ${!isAnhRole ? `
+                        <div class="flex items-center gap-2 self-end sm:self-center shrink-0">
+                          <button type="button" data-start-edit="${w.id}" class="btn-start-edit px-3 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs font-medium text-zinc-200">✏️ Sửa</button>
+                          <button type="button" data-delete-id="${w.id}" class="btn-delete px-3 py-2 rounded-xl bg-rose-950/60 hover:bg-rose-900/80 border border-rose-800/50 text-xs font-medium text-rose-200">🗑️ Xóa</button>
+                        </div>
+                      ` : `
+                        <span class="text-xs text-zinc-500 shrink-0">🔒 Chỉ xem</span>
+                      `}
                     </div>
                   `;
                 }).join('')}
@@ -1370,17 +1430,28 @@
               </div>
 
               ${state.coupleProfile ? `
-                <div class="rounded-xl bg-rose-950/40 border border-rose-800/50 p-4 space-y-3">
+                <div class="rounded-xl bg-rose-950/40 border border-rose-800/50 p-4 space-y-3.5">
                   <div class="flex items-center justify-between">
                     <span class="text-xs text-rose-300 font-medium">Trạng thái: Đã kết đôi 💕</span>
                     <span class="px-2.5 py-0.5 rounded-full bg-rose-500/20 text-rose-300 text-xs font-semibold">Mã: #${escapeHtml(state.coupleProfile.coupleCode)}</span>
                   </div>
                   <p class="text-sm text-zinc-200">
-                    Bạn là <strong class="text-rose-300">${escapeHtml(state.coupleProfile.myName)}</strong>
-                    đang kết đôi cùng <strong class="text-rose-300">${escapeHtml(state.coupleProfile.partnerName)}</strong>
+                    Bạn là <strong class="text-rose-300">${escapeHtml(state.coupleProfile.myName)}</strong> · vai trò <strong class="text-amber-300">${state.coupleProfile.myRole === 'anh' ? 'Anh 👦' : 'Em 👧'}</strong>,
+                    đang kết đôi cùng <strong class="text-rose-300">${escapeHtml(state.coupleProfile.partnerName)}</strong> · vai trò <strong class="text-pink-300">${state.coupleProfile.myRole === 'anh' ? 'Em 👧' : 'Anh 👦'}</strong>.
                   </p>
-                  <div class="flex items-center gap-2 pt-2">
-                    <button id="btn-copy-code" type="button" class="flex-1 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold text-zinc-200">Sao chép mã phòng</button>
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                    <div class="rounded-xl bg-[#140d18] border border-zinc-800 p-3 space-y-1">
+                      <div class="text-xs font-bold text-amber-300">👦 Vai trò Anh: ${escapeHtml(state.coupleProfile.anhName || '')}</div>
+                      <p class="text-[11px] text-zinc-400 leading-relaxed">Xem Bảng quà của Anh, đánh dấu chuẩn bị quà & ghi chú bí mật. Không có quyền thêm hoặc sửa điều ước.</p>
+                    </div>
+                    <div class="rounded-xl bg-[#140d18] border border-zinc-800 p-3 space-y-1">
+                      <div class="text-xs font-bold text-pink-300">👧 Vai trò Em: ${escapeHtml(state.coupleProfile.emName || '')}</div>
+                      <p class="text-[11px] text-zinc-400 leading-relaxed">Thêm điều ước mới, sửa hoặc xóa điều ước trong giỏ quà. Không có quyền truy cập Bảng quà của Anh.</p>
+                    </div>
+                  </div>
+                  <div class="flex flex-wrap items-center gap-2 pt-2">
+                    <button id="btn-swap-couple-roles" type="button" class="flex-1 py-2 px-3 rounded-xl bg-amber-950/60 hover:bg-amber-900/70 text-xs font-semibold text-amber-200 border border-amber-700/50">🔄 Đổi vai trò Anh / Em</button>
+                    <button id="btn-copy-code" type="button" class="py-2 px-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold text-zinc-200">Sao chép mã</button>
                     <button id="btn-disconnect-couple" type="button" class="py-2 px-3 rounded-xl bg-rose-950/80 hover:bg-rose-900 text-xs text-rose-300 border border-rose-800/40">Hủy kết đôi</button>
                   </div>
                 </div>
@@ -1396,15 +1467,36 @@
                   <button type="button" id="btn-copy-my-invite" class="px-3 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold text-rose-200 shrink-0">Sao chép mã</button>
                 </div>
 
+                ${state.currentUser ? `
+                  <div class="rounded-xl bg-[#1a1220] border border-zinc-800 p-4 space-y-2.5">
+                    <span class="block text-xs font-semibold text-zinc-300">Phân quyền vai trò của bạn khi ghép đôi:</span>
+                    <div class="grid grid-cols-2 gap-2.5">
+                      <button type="button" id="btn-couple-role-anh" class="p-2.5 rounded-xl border text-left transition-all ${state.currentUser.role === 'anh' ? 'bg-rose-500/20 border-rose-500 text-white shadow-[0_0_15px_rgba(244,63,94,0.25)]' : 'bg-[#120c16] border-zinc-800 text-zinc-400 hover:text-zinc-200'}">
+                        <div class="text-xs font-bold">👦 Tôi là Anh</div>
+                        <div class="text-[11px] opacity-80 mt-0.5">Chỉ xem Bảng quà của Anh, không thêm/sửa quà</div>
+                      </button>
+                      <button type="button" id="btn-couple-role-em" class="p-2.5 rounded-xl border text-left transition-all ${state.currentUser.role === 'em' ? 'bg-pink-500/20 border-pink-500 text-white shadow-[0_0_15px_rgba(236,72,153,0.25)]' : 'bg-[#120c16] border-zinc-800 text-zinc-400 hover:text-zinc-200'}">
+                        <div class="text-xs font-bold">👧 Tôi là Em</div>
+                        <div class="text-[11px] opacity-80 mt-0.5">Thêm & sửa điều ước, không vào phần của Anh</div>
+                      </button>
+                    </div>
+                  </div>
+                ` : ''}
+
                 ${(state.currentUser && state.currentUser.incomingRequests && state.currentUser.incomingRequests.length > 0) ? `
                   <div class="rounded-xl bg-rose-950/50 border border-rose-500/50 p-4 space-y-3">
                     <span class="block text-xs font-semibold text-rose-200">💌 Lời mời kết đôi đang chờ bạn đồng ý:</span>
                     <div class="space-y-2">
                       ${state.currentUser.incomingRequests.map(req => `
-                        <div class="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-[#140d18] border border-rose-800/50">
-                          <div class="text-xs">
-                            <span class="font-bold text-white">${escapeHtml(req.fromNickname || req.fromUsername)}</span>
-                            <span class="text-zinc-400 ml-1">@${escapeHtml(req.fromUsername)} · #${escapeHtml(req.fromInviteCode || '')}</span>
+                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 rounded-xl bg-[#140d18] border border-rose-800/50">
+                          <div class="text-xs space-y-1">
+                            <div>
+                              <span class="font-bold text-white">${escapeHtml(req.fromNickname || req.fromUsername)}</span>
+                              <span class="text-zinc-400 ml-1">@${escapeHtml(req.fromUsername)} · #${escapeHtml(req.fromInviteCode || '')}</span>
+                            </div>
+                            <div class="text-[11px] text-rose-300">
+                              Phân quyền: <strong>${escapeHtml(req.fromNickname || req.fromUsername)}</strong> là <strong>${req.fromRole === 'em' ? 'Em 👧' : 'Anh 👦'}</strong> · Bạn là <strong>${req.fromRole === 'em' ? 'Anh 👦' : 'Em 👧'}</strong>
+                            </div>
                           </div>
                           <div class="flex items-center gap-1.5 shrink-0">
                             <button type="button" data-accept-request-id="${escapeHtml(req.fromId)}" class="btn-accept-pair px-3 py-1.5 rounded-lg bg-rose-500 hover:bg-rose-600 text-white text-xs font-semibold shadow-sm active:scale-[0.98]">Đồng ý 💕</button>
@@ -1552,17 +1644,48 @@
     }
 
     function bindEvents(eligibleLucky) {
+      const activeRole = (state.coupleProfile && state.coupleProfile.myRole) || (state.currentUser && state.currentUser.role) || "em";
+      const isAnhRole = Boolean(state.currentUser && activeRole === "anh");
+      const isEmRole = Boolean(state.currentUser && activeRole === "em");
+
+      const btnCloseRoleNotice = document.getElementById("btn-close-role-notice");
+      if (btnCloseRoleNotice) btnCloseRoleNotice.onclick = () => { state.roleNotice = ""; render(); };
+
       const tabEm = document.getElementById("tab-em");
-      if (tabEm) tabEm.onclick = () => { state.activeTab = "em"; render(); };
+      if (tabEm) tabEm.onclick = () => {
+        if (isAnhRole) {
+          state.roleNotice = "Tài khoản của Anh không có quyền thêm hoặc sửa điều ước của Em.";
+          render();
+          return;
+        }
+        state.roleNotice = "";
+        state.activeTab = "em";
+        render();
+      };
 
       const tabAnh = document.getElementById("tab-anh");
       if (tabAnh) tabAnh.onclick = () => {
-        if (state.isUnlocked) { state.activeTab = "anh"; render(); }
-        else { state.pinModalOpen = true; state.pinError = ""; render(); }
+        if (!state.currentUser) {
+          state.authModalOpen = true;
+          render();
+          return;
+        }
+        if (isEmRole) {
+          state.roleNotice = "Tài khoản của Em không có quyền truy cập vào phần Bảng quà bí mật của Anh.";
+          render();
+          return;
+        }
+        state.roleNotice = "";
+        state.activeTab = "anh";
+        render();
       };
 
       const btnOpenDrawer = document.getElementById("btn-open-drawer");
-      if (btnOpenDrawer) btnOpenDrawer.onclick = () => { state.drawerOpen = true; render(); };
+      if (btnOpenDrawer) btnOpenDrawer.onclick = () => {
+        if (isAnhRole) return;
+        state.drawerOpen = true;
+        render();
+      };
 
       const btnSuccessOpenDrawer = document.getElementById("btn-success-open-drawer");
       if (btnSuccessOpenDrawer) btnSuccessOpenDrawer.onclick = () => { state.drawerOpen = true; render(); };
@@ -1598,6 +1721,17 @@
       const form = document.getElementById("wish-form");
       if (form) form.onsubmit = async (e) => {
         e.preventDefault();
+        if (!state.currentUser) {
+          state.authModalOpen = true;
+          render();
+          return;
+        }
+        if (isAnhRole) {
+          state.form.error = "Tài khoản của Anh không có quyền thêm điều ước.";
+          state.form.success = "";
+          render();
+          return;
+        }
         if (!state.form.title.trim()) {
           state.form.error = "Em ơi, hãy nhập tên món quà em thích nhé!";
           state.form.success = "";
@@ -1652,6 +1786,7 @@
       // Edit inside drawer
       document.querySelectorAll(".btn-start-edit").forEach(btn => {
         btn.onclick = () => {
+          if (isAnhRole) return;
           const id = btn.getAttribute("data-start-edit");
           const target = state.wishes.find(w => w.id === id);
           if (target) {
@@ -1674,6 +1809,7 @@
 
       const btnSaveEdit = document.getElementById("btn-save-edit");
       if (btnSaveEdit) btnSaveEdit.onclick = async () => {
+        if (isAnhRole) return;
         const id = state.editingId;
         const target = state.wishes.find(w => w.id === id);
         if (!target) return;
@@ -1897,6 +2033,7 @@
 
       document.querySelectorAll(".btn-delete").forEach(btn => {
         btn.onclick = async () => {
+          if (isAnhRole) return;
           const id = btn.getAttribute("data-delete-id");
           const target = state.wishes.find(w => w.id === id);
           state.wishes = state.wishes.filter(w => w.id !== id);
@@ -1951,6 +2088,10 @@
         const nowIso = new Date().toISOString();
         const nowMs = Date.now() + 10;
         const sharedCode = (myAcc.inviteCode || senderAcc.inviteCode || generateInviteCode(accounts)).toUpperCase();
+
+        const senderRole = senderAcc.role === "em" ? "em" : "anh";
+        senderAcc.role = senderRole;
+        myAcc.role = senderRole === "anh" ? "em" : "anh";
 
         myAcc.coupleCode = sharedCode;
         myAcc.partnerId = senderAcc.id;
@@ -2178,6 +2319,56 @@
         navigator.clipboard.writeText(codeToCopy);
         btnCopyMyInvite.textContent = "Đã sao chép! ✓";
         setTimeout(() => { if (btnCopyMyInvite) btnCopyMyInvite.textContent = "Sao chép mã"; }, 2000);
+      };
+
+      const btnCoupleRoleAnh = document.getElementById("btn-couple-role-anh");
+      if (btnCoupleRoleAnh) btnCoupleRoleAnh.onclick = () => {
+        if (!state.currentUser) return;
+        const accounts = loadAccounts();
+        const myAcc = accounts.find(a => a.id === state.currentUser.id);
+        if (myAcc) {
+          myAcc.role = "anh";
+          myAcc.updatedAt = Date.now() + 10;
+          const cleaned = saveAccounts(accounts);
+          syncCurrentUserFromAccounts();
+          publishAccountsToCloud(cleaned);
+          render();
+        }
+      };
+
+      const btnCoupleRoleEm = document.getElementById("btn-couple-role-em");
+      if (btnCoupleRoleEm) btnCoupleRoleEm.onclick = () => {
+        if (!state.currentUser) return;
+        const accounts = loadAccounts();
+        const myAcc = accounts.find(a => a.id === state.currentUser.id);
+        if (myAcc) {
+          myAcc.role = "em";
+          myAcc.updatedAt = Date.now() + 10;
+          const cleaned = saveAccounts(accounts);
+          syncCurrentUserFromAccounts();
+          publishAccountsToCloud(cleaned);
+          render();
+        }
+      };
+
+      const btnSwapCoupleRoles = document.getElementById("btn-swap-couple-roles");
+      if (btnSwapCoupleRoles) btnSwapCoupleRoles.onclick = () => {
+        if (!state.currentUser || !state.coupleProfile) return;
+        const accounts = loadAccounts();
+        const myAcc = accounts.find(a => a.id === state.currentUser.id);
+        const partnerAcc = accounts.find(a => a.id === state.coupleProfile.partnerId);
+        if (myAcc && partnerAcc) {
+          const nextMyRole = myAcc.role === "anh" ? "em" : "anh";
+          const nowMs = Date.now() + 20;
+          myAcc.role = nextMyRole;
+          myAcc.updatedAt = nowMs;
+          partnerAcc.role = nextMyRole === "anh" ? "em" : "anh";
+          partnerAcc.updatedAt = nowMs;
+          const cleaned = saveAccounts(accounts);
+          syncCurrentUserFromAccounts();
+          publishAccountsToCloud(cleaned);
+          render();
+        }
       };
 
       const btnDisconnectCouple = document.getElementById("btn-disconnect-couple");
