@@ -1089,48 +1089,8 @@
                   <button id="btn-open-lucky" type="button" class="px-4 py-2.5 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600 text-white text-xs sm:text-sm font-semibold flex items-center gap-2 shadow-[0_4px_20px_rgba(244,63,94,0.35)] active:scale-[0.98]">
                     <span>🎁 Bốc thăm quà may mắn</span>
                   </button>
-                  <button id="btn-open-change-pin" type="button" class="px-3.5 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200 text-xs sm:text-sm font-medium active:scale-[0.98]">
-                    <span>🔑 Đổi mã PIN</span>
-                  </button>
-                  <button id="btn-toggle-config" type="button" class="px-3.5 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200 text-xs sm:text-sm font-medium active:scale-[0.98]">
-                    <span>⚙️ Sheet / Cloud</span>
-                  </button>
-                  <button id="btn-lock-pin" type="button" class="px-3.5 py-2.5 rounded-xl bg-zinc-800/80 hover:bg-zinc-700 border border-zinc-700 text-rose-300 text-xs sm:text-sm font-medium active:scale-[0.98]">
-                    <span>🔒 Khóa PIN</span>
-                  </button>
                 </div>
               </div>
-
-              <!-- Cloud & Google Sheet Sync Config Panel -->
-              ${state.configOpen ? `
-                <div class="rounded-2xl bg-[#18111d] border border-rose-900/60 p-5 space-y-4">
-                  <div class="flex items-center justify-between">
-                    <h3 class="font-serif text-lg font-bold text-rose-200">⚙️ Cấu Hình Đồng Bộ Google Sheet & Supabase Cloud</h3>
-                    <button id="btn-close-config" type="button" class="text-xs text-zinc-400 hover:text-white">Đóng ✕</button>
-                  </div>
-                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div class="space-y-1">
-                      <label class="text-xs text-zinc-300 font-medium">📊 Google Apps Script Webhook URL Đồng bộ Sheet</label>
-                      <input id="inp-webhook" type="url" value="${escapeHtml(state.webhookUrl)}" placeholder="https://script.google.com/macros/s/.../exec" class="w-full rounded-xl bg-[#120c16] border border-zinc-700 px-3 py-2 text-xs text-white outline-none focus:border-rose-500" />
-                    </div>
-                    <div class="space-y-1">
-                      <label class="text-xs text-zinc-300 font-medium">🔑 Đổi mã PIN mở Bảng quà của anh</label>
-                      <input id="inp-custom-pin" type="text" value="${escapeHtml(state.adminPin)}" placeholder="2410" class="w-full rounded-xl bg-[#120c16] border border-zinc-700 px-3 py-2 text-xs text-white tabular-nums outline-none focus:border-rose-500" />
-                    </div>
-                    <div class="space-y-1">
-                      <label class="text-xs text-zinc-300 font-medium">⚡ Supabase Project URL</label>
-                      <input id="inp-sb-url" type="url" value="${escapeHtml(state.sbUrl)}" placeholder="https://xyz.supabase.co" class="w-full rounded-xl bg-[#120c16] border border-zinc-700 px-3 py-2 text-xs text-white outline-none focus:border-rose-500" />
-                    </div>
-                    <div class="space-y-1">
-                      <label class="text-xs text-zinc-300 font-medium">🛡️ Supabase Anon Public Key</label>
-                      <input id="inp-sb-key" type="password" value="${escapeHtml(state.sbKey)}" placeholder="eyJhbGciOiJIUzI1NiIs..." class="w-full rounded-xl bg-[#120c16] border border-zinc-700 px-3 py-2 text-xs text-white outline-none focus:border-rose-500" />
-                    </div>
-                  </div>
-                  <div class="flex justify-end">
-                    <button id="btn-save-config" type="button" class="px-4 py-2 rounded-xl bg-rose-500 hover:bg-rose-600 text-xs font-semibold text-white active:scale-[0.98]">Lưu cấu hình</button>
-                  </div>
-                </div>
-              ` : ''}
 
               <!-- Stats -->
               <div class="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
@@ -1252,21 +1212,6 @@
             </section>
           `}
         </main>
-
-        <!-- MODAL PIN -->
-        ${state.pinModalOpen ? `
-          <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-            <div class="w-full max-w-md rounded-2xl bg-[#150f19] border border-rose-900/60 p-6 shadow-2xl space-y-4">
-              <div class="flex items-center justify-between">
-                <div>
-                  <h3 class="font-serif text-xl font-bold text-white">🔒 Khu Vực Bí Mật Của Anh</h3>
-                  <p class="text-xs text-zinc-400 mt-0.5">Bảo vệ những món quà bất ngờ dành cho em</p>
-                </div>
-                <button id="btn-close-pin" type="button" class="px-2.5 py-1 rounded-xl bg-zinc-800 text-xs text-zinc-300">✕</button>
-              </div>
-              <form id="pin-form" class="space-y-4">
-                <input id="inp-pin" type="password" inputmode="numeric" autofocus value="${escapeHtml(state.pinInput)}" placeholder="••••" class="w-full rounded-xl bg-[#1d1522] border border-zinc-700 focus:border-rose-500 px-4 py-3 text-center text-xl tracking-[0.4em] font-bold text-white tabular-nums outline-none" />
-                ${state.pinError ? `<div class="rounded-xl bg-rose-950/80 border border-rose-700/70 px-3.5 py-2.5 text-xs text-rose-200">${escapeHtml(state.pinError)}</div>` : ''}
                 <div class="flex items-center gap-2 pt-1">
                   <button id="btn-cancel-pin" type="button" class="flex-1 py-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs sm:text-sm font-semibold text-zinc-300">Quay lại</button>
                   <button type="submit" class="flex-1 py-3 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600 text-xs sm:text-sm font-semibold text-white shadow-[0_4px_20px_rgba(244,63,94,0.35)]">Mở Bảng Quà</button>
@@ -1528,36 +1473,6 @@
             </div>
           </div>
         ` : ''}
-
-        <!-- CHANGE PIN MODAL -->
-        ${state.changePinModalOpen ? `
-          <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-            <div class="w-full max-w-md rounded-2xl bg-[#150f19] border border-rose-900/60 p-6 shadow-2xl space-y-4">
-              <div class="flex items-center justify-between">
-                <div>
-                  <h3 class="font-serif text-xl font-bold text-white">🔑 Đổi Mã PIN Bảng Quà Của Anh</h3>
-                  <p class="text-xs text-zinc-400 mt-0.5">Đặt mã PIN mới từ 4 đến 8 chữ số</p>
-                </div>
-                <button id="btn-close-change-pin" type="button" class="px-2.5 py-1 rounded-xl bg-zinc-800 text-xs text-zinc-300">✕</button>
-              </div>
-
-              <form id="change-pin-form" class="space-y-3.5">
-                <div class="space-y-1">
-                  <label class="block text-xs font-semibold text-zinc-300">Mã PIN hiện tại</label>
-                  <input id="inp-old-pin" type="password" inputmode="numeric" placeholder="Mặc định 2410" value="${escapeHtml(state.pinChangeOld)}" class="w-full rounded-xl bg-[#1d1522] border border-zinc-700 px-3.5 py-2.5 text-sm text-white outline-none focus:border-rose-500" required />
-                </div>
-
-                <div class="space-y-1">
-                  <label class="block text-xs font-semibold text-zinc-300">Mã PIN mới</label>
-                  <input id="inp-new-pin" type="password" inputmode="numeric" placeholder="••••" value="${escapeHtml(state.pinChangeNew)}" class="w-full rounded-xl bg-[#1d1522] border border-zinc-700 px-3.5 py-2.5 text-sm text-white outline-none focus:border-rose-500" required />
-                </div>
-
-                <div class="space-y-1">
-                  <label class="block text-xs font-semibold text-zinc-300">Xác nhận mã PIN mới</label>
-                  <input id="inp-confirm-pin" type="password" inputmode="numeric" placeholder="••••" value="${escapeHtml(state.pinChangeConfirm)}" class="w-full rounded-xl bg-[#1d1522] border border-zinc-700 px-3.5 py-2.5 text-sm text-white outline-none focus:border-rose-500" required />
-                </div>
-
-                ${state.pinChangeError ? `<div class="rounded-xl bg-rose-950/80 border border-rose-700/70 px-3.5 py-2 text-xs text-rose-200">${escapeHtml(state.pinChangeError)}</div>` : ''}
                 ${state.pinChangeSuccess ? `<div class="rounded-xl bg-emerald-950/80 border border-emerald-700/70 px-3.5 py-2 text-xs text-emerald-200">Đã cập nhật mã PIN thành công!</div>` : ''}
 
                 <div class="flex items-center gap-2 pt-2">
@@ -1834,58 +1749,7 @@
         render();
       };
 
-      // PIN Modal
-      const btnClosePin = document.getElementById("btn-close-pin");
-      const btnCancelPin = document.getElementById("btn-cancel-pin");
-      if (btnClosePin) btnClosePin.onclick = () => { state.pinModalOpen = false; render(); };
-      if (btnCancelPin) btnCancelPin.onclick = () => { state.pinModalOpen = false; render(); };
 
-      const inpPin = document.getElementById("inp-pin");
-      if (inpPin) inpPin.oninput = (e) => { state.pinInput = e.target.value; };
-
-      const pinForm = document.getElementById("pin-form");
-      if (pinForm) pinForm.onsubmit = (e) => {
-        e.preventDefault();
-        if (state.pinInput.trim() === state.adminPin) {
-          state.isUnlocked = true;
-          sessionStorage.setItem(PIN_SESSION_KEY, "true");
-          state.pinModalOpen = false;
-          state.pinInput = "";
-          state.activeTab = "anh";
-          render();
-        } else {
-          state.pinError = "Mã PIN chưa đúng rồi! Khu vực này giữ bí mật bất ngờ cho em nha ♥";
-          render();
-        }
-      };
-
-      const btnLockPin = document.getElementById("btn-lock-pin");
-      if (btnLockPin) btnLockPin.onclick = () => {
-        state.isUnlocked = false;
-        sessionStorage.removeItem(PIN_SESSION_KEY);
-        state.activeTab = "em";
-        render();
-      };
-
-      // Config Panel
-      const btnToggleConfig = document.getElementById("btn-toggle-config");
-      if (btnToggleConfig) btnToggleConfig.onclick = () => { state.configOpen = !state.configOpen; render(); };
-      const btnCloseConfig = document.getElementById("btn-close-config");
-      if (btnCloseConfig) btnCloseConfig.onclick = () => { state.configOpen = false; render(); };
-      const btnSaveConfig = document.getElementById("btn-save-config");
-      if (btnSaveConfig) btnSaveConfig.onclick = () => {
-        state.webhookUrl = document.getElementById("inp-webhook").value.trim();
-        state.adminPin = document.getElementById("inp-custom-pin").value.trim() || "2410";
-        state.sbUrl = document.getElementById("inp-sb-url").value.trim();
-        state.sbKey = document.getElementById("inp-sb-key").value.trim();
-        localStorage.setItem(WEBHOOK_KEY, state.webhookUrl);
-        localStorage.setItem(CUSTOM_PIN_KEY, state.adminPin);
-        localStorage.setItem(SUPABASE_URL_KEY, state.sbUrl);
-        localStorage.setItem(SUPABASE_ANON_KEY, state.sbKey);
-        initSupabaseClient();
-        state.configOpen = false;
-        render();
-      };
 
       // Filters
       const fltSearch = document.getElementById("flt-search");
@@ -2482,75 +2346,7 @@
         sendPairRequestToPartner(partnerAcc);
       };
 
-      // Change PIN Modal Handlers
-      const btnOpenChangePin = document.getElementById("btn-open-change-pin");
-      if (btnOpenChangePin) btnOpenChangePin.onclick = () => {
-        state.changePinModalOpen = true;
-        state.pinChangeOld = "";
-        state.pinChangeNew = "";
-        state.pinChangeConfirm = "";
-        state.pinChangeError = "";
-        state.pinChangeSuccess = false;
-        render();
-      };
 
-      const btnCloseChangePin = document.getElementById("btn-close-change-pin");
-      if (btnCloseChangePin) btnCloseChangePin.onclick = () => { state.changePinModalOpen = false; render(); };
-
-      const btnCancelChangePin = document.getElementById("btn-cancel-change-pin");
-      if (btnCancelChangePin) btnCancelChangePin.onclick = () => { state.changePinModalOpen = false; render(); };
-
-      const inpOldPin = document.getElementById("inp-old-pin");
-      if (inpOldPin) inpOldPin.oninput = (e) => { state.pinChangeOld = e.target.value; };
-
-      const inpNewPin = document.getElementById("inp-new-pin");
-      if (inpNewPin) inpNewPin.oninput = (e) => { state.pinChangeNew = e.target.value; };
-
-      const inpConfirmPin = document.getElementById("inp-confirm-pin");
-      if (inpConfirmPin) inpConfirmPin.oninput = (e) => { state.pinChangeConfirm = e.target.value; };
-
-      const changePinForm = document.getElementById("change-pin-form");
-      if (changePinForm) changePinForm.onsubmit = (e) => {
-        e.preventDefault();
-        state.pinChangeError = "";
-        const oldPin = state.pinChangeOld.trim();
-        const newPin = state.pinChangeNew.trim();
-        const confirmPin = state.pinChangeConfirm.trim();
-
-        if (oldPin !== state.adminPin && oldPin !== "2410") {
-          state.pinChangeError = "Mã PIN hiện tại chưa chính xác.";
-          render();
-          return;
-        }
-        if (newPin.length < 4 || newPin.length > 8) {
-          state.pinChangeError = "Mã PIN mới nên có từ 4 đến 8 chữ số.";
-          render();
-          return;
-        }
-        if (newPin !== confirmPin) {
-          state.pinChangeError = "Mã PIN xác nhận không khớp.";
-          render();
-          return;
-        }
-
-        state.adminPin = newPin;
-        localStorage.setItem(CUSTOM_PIN_KEY, newPin);
-        broadcastSync("PIN_UPDATED", newPin);
-          if (state.coupleProfile && state.coupleProfile.coupleCode) {
-            sendCloudMessage(getTopicName("room", state.coupleProfile.coupleCode), {
-              type: "PIN_UPDATED",
-              senderId: state.currentUser ? state.currentUser.id : undefined,
-              payload: newPin
-            });
-          }
-        state.pinChangeSuccess = true;
-        render();
-
-        setTimeout(() => {
-          state.changePinModalOpen = false;
-          render();
-        }, 1200);
-      };
 
       // Auth Modal & User Handlers
       const btnOpenAuth = document.getElementById("btn-open-auth");
