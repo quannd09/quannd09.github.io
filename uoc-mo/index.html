@@ -98,9 +98,17 @@
             acc.inviteCode = generateInviteCode(list);
             changed = true;
           }
-          if (acc.coupleCode && acc.partnerName && acc.isMatched === undefined) {
-            acc.isMatched = true;
-            changed = true;
+          // Xóa bỏ trạng thái ghép đôi giả lập mặc định với "Em yêu" / "Anh yêu"
+          const isDummyPartner = !acc.partnerId || acc.partnerName === "Em yêu" || acc.partnerName === "Anh yêu";
+          const hasValidPartner = acc.partnerId && list.some(other => other.id === acc.partnerId);
+          if (isDummyPartner || !hasValidPartner) {
+            if (acc.isMatched || acc.partnerName || acc.coupleCode) {
+              delete acc.coupleCode;
+              delete acc.partnerId;
+              delete acc.partnerName;
+              acc.isMatched = false;
+              changed = true;
+            }
           }
         });
         if (changed) {
@@ -117,24 +125,27 @@
     }
 
     function buildCoupleProfileFromUser(user, accounts) {
-      if (!user || !user.coupleCode || !user.isMatched) return null;
+      if (!user) return null;
       const all = Array.isArray(accounts) ? accounts : loadAccounts();
       const partner = all.find(a =>
         a.id !== user.id &&
         ((user.partnerId && a.id === user.partnerId) ||
-         (a.coupleCode && a.coupleCode.toUpperCase() === user.coupleCode.toUpperCase()))
+         (user.coupleCode && a.coupleCode && a.coupleCode.toUpperCase() === user.coupleCode.toUpperCase()) ||
+         (user.coupleCode && a.inviteCode && a.inviteCode.toUpperCase() === user.coupleCode.toUpperCase()) ||
+         (a.partnerId && a.partnerId === user.id))
       );
-      const partnerName = partner
-        ? (partner.nickname || partner.username)
-        : (user.partnerName || (user.role === "anh" ? "Em yêu" : "Anh yêu"));
+      if (!partner) {
+        return null;
+      }
+      const sharedCode = (partner.coupleCode || user.coupleCode || partner.inviteCode || user.inviteCode || "LOVE-100").toUpperCase();
       return {
-        coupleCode: user.coupleCode.toUpperCase(),
-        myRole: user.role || "em",
+        coupleCode: sharedCode,
+        myRole: user.role || "anh",
         myName: user.nickname || user.username,
-        partnerName: partnerName,
-        partnerId: partner ? partner.id : user.partnerId,
+        partnerName: partner.nickname || partner.username,
+        partnerId: partner.id,
         isMatched: true,
-        matchedAt: user.matchedAt || new Date().toISOString()
+        matchedAt: user.matchedAt || partner.matchedAt || new Date().toISOString()
       };
     }
 
@@ -1491,9 +1502,14 @@
       });
 
       // Couple Matching Handlers
-      function performAccountPairing(partnerAcc, customRawCode) {
+      function performAccountPairing(partnerAcc) {
         if (!state.currentUser) {
           state.coupleError = "Bạn hãy đăng nhập hoặc đăng ký tài khoản trước khi kết đôi nhé.";
+          render();
+          return;
+        }
+        if (!partnerAcc) {
+          state.coupleError = "Không tìm thấy tài khoản người yêu với mã hoặc tên đăng nhập này. Bạn hãy kiểm tra lại mã hoặc bấm nút kết nối nhanh bên dưới nhé!";
           render();
           return;
         }
@@ -1507,80 +1523,42 @@
         const myAcc = accounts[myIdx];
         const nowIso = new Date().toISOString();
 
-        if (partnerAcc) {
-          if (partnerAcc.id === myAcc.id) {
-            state.coupleError = "Đây là mã kết đôi của chính bạn. Hãy nhập mã của người yêu nhé!";
-            render();
-            return;
-          }
-          const pIdx = accounts.findIndex(a => a.id === partnerAcc.id);
-          if (pIdx < 0) {
-            state.coupleError = "Không tìm thấy tài khoản người yêu.";
-            render();
-            return;
-          }
-          const targetAcc = accounts[pIdx];
-          const sharedCode = (targetAcc.coupleCode || targetAcc.inviteCode || myAcc.inviteCode || generateInviteCode(accounts)).toUpperCase();
-
-          myAcc.coupleCode = sharedCode;
-          myAcc.partnerId = targetAcc.id;
-          myAcc.partnerName = targetAcc.nickname || targetAcc.username;
-          myAcc.isMatched = true;
-          myAcc.matchedAt = nowIso;
-
-          targetAcc.coupleCode = sharedCode;
-          targetAcc.partnerId = myAcc.id;
-          targetAcc.partnerName = myAcc.nickname || myAcc.username;
-          targetAcc.isMatched = true;
-          targetAcc.matchedAt = nowIso;
-
-          saveAccounts(accounts);
-
-          // Migrate wishes authored by either partner to the shared couple code
-          let wishesChanged = false;
-          state.wishes = state.wishes.map(w => {
-            if (w.author_id === myAcc.id || w.author_id === targetAcc.id) {
-              if (w.couple_code !== sharedCode) {
-                wishesChanged = true;
-                return { ...w, couple_code: sharedCode };
-              }
-            }
-            return w;
-          });
-          if (wishesChanged) {
-            saveLocalWishes(state.wishes);
-            broadcastSync("WISHES_SYNC", state.wishes);
-          }
-
-          syncCurrentUserFromAccounts();
-          broadcastSync("ACCOUNTS_UPDATED", { sharedCode });
-          state.coupleCodeInput = "";
-          state.coupleError = "";
-          state.coupleSuccess = "";
-          state.coupleModalOpen = false;
-          if (window.confetti) confetti({ particleCount: 70, spread: 80, origin: { y: 0.6 } });
+        if (partnerAcc.id === myAcc.id) {
+          state.coupleError = "Đây là mã kết đôi của chính bạn. Hãy nhập mã của người yêu nhé!";
           render();
           return;
         }
-
-        // Fallback if entering a room code from another device/browser
-        const cleanCode = String(customRawCode || "").replace(/^[@#]/, "").trim().toUpperCase();
-        if (!cleanCode) {
-          state.coupleError = "Vui lòng nhập mã kết đôi hoặc tên đăng nhập của người yêu.";
+        const pIdx = accounts.findIndex(a => a.id === partnerAcc.id);
+        if (pIdx < 0) {
+          state.coupleError = "Không tìm thấy tài khoản người yêu trong danh sách.";
           render();
           return;
         }
-        myAcc.coupleCode = cleanCode;
-        myAcc.partnerName = myAcc.partnerName || (myAcc.role === "anh" ? "Em yêu" : "Anh yêu");
+        const targetAcc = accounts[pIdx];
+        const sharedCode = (targetAcc.inviteCode || myAcc.inviteCode || targetAcc.coupleCode || myAcc.coupleCode || generateInviteCode(accounts)).toUpperCase();
+
+        myAcc.coupleCode = sharedCode;
+        myAcc.partnerId = targetAcc.id;
+        myAcc.partnerName = targetAcc.nickname || targetAcc.username;
         myAcc.isMatched = true;
         myAcc.matchedAt = nowIso;
+
+        targetAcc.coupleCode = sharedCode;
+        targetAcc.partnerId = myAcc.id;
+        targetAcc.partnerName = myAcc.nickname || myAcc.username;
+        targetAcc.isMatched = true;
+        targetAcc.matchedAt = nowIso;
+
         saveAccounts(accounts);
 
+        // Migrate wishes authored by either partner to the shared couple code
         let wishesChanged = false;
         state.wishes = state.wishes.map(w => {
-          if (w.author_id === myAcc.id && w.couple_code !== cleanCode) {
-            wishesChanged = true;
-            return { ...w, couple_code: cleanCode };
+          if (w.author_id === myAcc.id || w.author_id === targetAcc.id) {
+            if (w.couple_code !== sharedCode) {
+              wishesChanged = true;
+              return { ...w, couple_code: sharedCode };
+            }
           }
           return w;
         });
@@ -1590,7 +1568,7 @@
         }
 
         syncCurrentUserFromAccounts();
-        broadcastSync("ACCOUNTS_UPDATED", { sharedCode: cleanCode });
+        broadcastSync("ACCOUNTS_UPDATED", { sharedCode });
         state.coupleCodeInput = "";
         state.coupleError = "";
         state.coupleSuccess = "";
@@ -1635,28 +1613,24 @@
       const btnDisconnectCouple = document.getElementById("btn-disconnect-couple");
       if (btnDisconnectCouple) btnDisconnectCouple.onclick = () => {
         if (confirm("Bạn có chắc muốn hủy kết đôi hiện tại không?")) {
-          const oldCode = state.coupleProfile ? state.coupleProfile.coupleCode : null;
-          const oldPartnerId = state.coupleProfile ? state.coupleProfile.partnerId : null;
+          const accounts = loadAccounts();
+          const myId = state.currentUser ? state.currentUser.id : null;
+          const partnerId = state.coupleProfile ? state.coupleProfile.partnerId : null;
+          accounts.forEach(acc => {
+            if (acc.id === myId || (partnerId && acc.id === partnerId)) {
+              delete acc.coupleCode;
+              delete acc.partnerId;
+              delete acc.partnerName;
+              acc.isMatched = false;
+            }
+          });
+          saveAccounts(accounts);
           state.coupleProfile = null;
-          try { sessionStorage.removeItem(COUPLE_STORAGE_KEY); } catch {}
-          localStorage.removeItem(COUPLE_STORAGE_KEY);
-          if (state.currentUser) {
-            const accounts = loadAccounts();
-            accounts.forEach(acc => {
-              if (
-                acc.id === state.currentUser.id ||
-                (oldPartnerId && acc.id === oldPartnerId) ||
-                (oldCode && acc.coupleCode && acc.coupleCode.toUpperCase() === oldCode.toUpperCase())
-              ) {
-                delete acc.coupleCode;
-                delete acc.partnerId;
-                delete acc.partnerName;
-                acc.isMatched = false;
-              }
-            });
-            saveAccounts(accounts);
-            syncCurrentUserFromAccounts();
-          }
+          try {
+            sessionStorage.removeItem(COUPLE_STORAGE_KEY);
+            localStorage.removeItem(COUPLE_STORAGE_KEY);
+          } catch {}
+          syncCurrentUserFromAccounts();
           broadcastSync("ACCOUNTS_UPDATED", { disconnected: true });
           state.coupleModalOpen = false;
           render();
@@ -1675,7 +1649,7 @@
           const accounts = loadAccounts();
           const partnerAcc = accounts.find(a => a.id === targetId);
           if (partnerAcc) {
-            performAccountPairing(partnerAcc, "");
+            performAccountPairing(partnerAcc);
           }
         };
       });
@@ -1698,7 +1672,8 @@
         if (state.currentUser) {
           const myInvite = (state.currentUser.inviteCode || "").toUpperCase();
           const myUser = (state.currentUser.username || "").toLowerCase();
-          if (cleanUpper === myInvite || cleanLower === myUser) {
+          const myNick = (state.currentUser.nickname || "").toLowerCase();
+          if (cleanUpper === myInvite || cleanLower === myUser || cleanLower === myNick) {
             state.coupleError = "Đây là mã hoặc tài khoản của chính bạn. Hãy nhập mã của người yêu nhé!";
             render();
             return;
@@ -1709,10 +1684,17 @@
           (!state.currentUser || a.id !== state.currentUser.id) &&
           ((a.inviteCode && a.inviteCode.toUpperCase() === cleanUpper) ||
            (a.coupleCode && a.coupleCode.toUpperCase() === cleanUpper) ||
-           (a.username && a.username.toLowerCase() === cleanLower))
+           (a.username && a.username.toLowerCase() === cleanLower) ||
+           (a.nickname && a.nickname.toLowerCase() === cleanLower))
         );
 
-        performAccountPairing(partnerAcc || null, cleanUpper);
+        if (!partnerAcc) {
+          state.coupleError = "Không tìm thấy tài khoản người yêu với mã hoặc tên đăng nhập này. Bạn hãy kiểm tra lại mã hoặc bấm nút kết nối nhanh bên dưới nhé!";
+          render();
+          return;
+        }
+
+        performAccountPairing(partnerAcc);
       };
 
       // Change PIN Modal Handlers
