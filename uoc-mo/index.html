@@ -432,12 +432,12 @@
                 </div>
 
                 <div class="space-y-2">
-                  <label for="inp-link" class="block text-xs font-semibold uppercase tracking-wider text-zinc-300">🔗 Link sản phẩm (tuỳ chọn)</label>
+                  <label for="inp-link" class="block text-xs font-semibold uppercase tracking-wider text-zinc-300">🔗 Link sản phẩm</label>
                   <input id="inp-link" type="url" value="${escapeHtml(state.form.product_link)}" placeholder="https://shopee.vn/..." class="w-full rounded-xl bg-[#1d1522] border border-zinc-800 focus:border-rose-500 px-4 py-3 text-sm sm:text-base text-zinc-100 placeholder:text-zinc-500 outline-none" />
                 </div>
 
                 <div class="space-y-2">
-                  <label for="inp-notes" class="block text-xs font-semibold uppercase tracking-wider text-zinc-300">📝 Ghi chú thêm (tuỳ chọn)</label>
+                  <label for="inp-notes" class="block text-xs font-semibold uppercase tracking-wider text-zinc-300">📝 Ghi chú thêm</label>
                   <textarea id="inp-notes" rows="3" placeholder="Màu hồng nhé anh, size M..." class="w-full rounded-xl bg-[#1d1522] border border-zinc-800 focus:border-rose-500 px-4 py-3 text-sm sm:text-base text-zinc-100 placeholder:text-zinc-500 outline-none resize-none">${escapeHtml(state.form.notes)}</textarea>
                 </div>
 
@@ -495,11 +495,11 @@
                       <input id="inp-custom-pin" type="text" value="${escapeHtml(state.adminPin)}" placeholder="2410" class="w-full rounded-xl bg-[#120c16] border border-zinc-700 px-3 py-2 text-xs text-white tabular-nums outline-none focus:border-rose-500" />
                     </div>
                     <div class="space-y-1">
-                      <label class="text-xs text-zinc-300 font-medium">⚡ Supabase Project URL (Tuỳ chọn)</label>
+                      <label class="text-xs text-zinc-300 font-medium">⚡ Supabase Project URL</label>
                       <input id="inp-sb-url" type="url" value="${escapeHtml(state.sbUrl)}" placeholder="https://xyz.supabase.co" class="w-full rounded-xl bg-[#120c16] border border-zinc-700 px-3 py-2 text-xs text-white outline-none focus:border-rose-500" />
                     </div>
                     <div class="space-y-1">
-                      <label class="text-xs text-zinc-300 font-medium">🛡️ Supabase Anon Public Key (Tuỳ chọn)</label>
+                      <label class="text-xs text-zinc-300 font-medium">🛡️ Supabase Anon Public Key</label>
                       <input id="inp-sb-key" type="password" value="${escapeHtml(state.sbKey)}" placeholder="eyJhbGciOiJIUzI1NiIs..." class="w-full rounded-xl bg-[#120c16] border border-zinc-700 px-3 py-2 text-xs text-white outline-none focus:border-rose-500" />
                     </div>
                   </div>
@@ -832,8 +832,8 @@
                   <div class="space-y-1">
                     <label class="block text-xs font-semibold text-zinc-300">Vai trò của bạn</label>
                     <div class="grid grid-cols-2 gap-2">
-                      <button type="button" id="btn-role-anh" class="py-2.5 rounded-xl border text-xs font-semibold ${state.coupleRole === 'anh' ? 'bg-rose-500/20 border-rose-500 text-rose-200' : 'bg-[#1d1522] border-zinc-800 text-zinc-400'}">Anh (Người mua quà)</button>
-                      <button type="button" id="btn-role-em" class="py-2.5 rounded-xl border text-xs font-semibold ${state.coupleRole === 'em' ? 'bg-rose-500/20 border-rose-500 text-rose-200' : 'bg-[#1d1522] border-zinc-800 text-zinc-400'}">Em (Người ước quà)</button>
+                      <button type="button" id="btn-role-anh" class="py-2.5 rounded-xl border text-xs font-semibold ${state.coupleRole === 'anh' ? 'bg-rose-500/20 border-rose-500 text-rose-200' : 'bg-[#1d1522] border-zinc-800 text-zinc-400'}">Anh 👦</button>
+                      <button type="button" id="btn-role-em" class="py-2.5 rounded-xl border text-xs font-semibold ${state.coupleRole === 'em' ? 'bg-rose-500/20 border-rose-500 text-rose-200' : 'bg-[#1d1522] border-zinc-800 text-zinc-400'}">Em 👧</button>
                     </div>
                   </div>
 
@@ -882,11 +882,11 @@
               <form id="change-pin-form" class="space-y-3.5">
                 <div class="space-y-1">
                   <label class="block text-xs font-semibold text-zinc-300">Mã PIN hiện tại</label>
-                  <input id="inp-old-pin" type="password" inputmode="numeric" placeholder="Mặc định là 2410" value="${escapeHtml(state.pinChangeOld)}" class="w-full rounded-xl bg-[#1d1522] border border-zinc-700 px-3.5 py-2.5 text-sm text-white outline-none focus:border-rose-500" required />
+                  <input id="inp-old-pin" type="password" inputmode="numeric" placeholder="Mặc định 2410" value="${escapeHtml(state.pinChangeOld)}" class="w-full rounded-xl bg-[#1d1522] border border-zinc-700 px-3.5 py-2.5 text-sm text-white outline-none focus:border-rose-500" required />
                 </div>
 
                 <div class="space-y-1">
-                  <label class="block text-xs font-semibold text-zinc-300">Mã PIN mới (4 - 8 chữ số)</label>
+                  <label class="block text-xs font-semibold text-zinc-300">Mã PIN mới</label>
                   <input id="inp-new-pin" type="password" inputmode="numeric" placeholder="••••" value="${escapeHtml(state.pinChangeNew)}" class="w-full rounded-xl bg-[#1d1522] border border-zinc-700 px-3.5 py-2.5 text-sm text-white outline-none focus:border-rose-500" required />
                 </div>
 
