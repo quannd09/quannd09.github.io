@@ -68,7 +68,22 @@
     const SUPABASE_URL_KEY = "couple_wishlist_sb_url_v2";
     const SUPABASE_ANON_KEY = "couple_wishlist_sb_key_v2";
     const COUPLE_STORAGE_KEY = "couple_wishlist_profile_v1";
+    const AUTH_USER_KEY = "couple_wishlist_user_v1";
+    const STORAGE_USERS_KEY = "couple_wishlist_accounts_v1";
     const SYNC_CHANNEL_NAME = "couple_wishlist_sync_v1";
+
+    function loadAccounts() {
+      try {
+        const raw = localStorage.getItem(STORAGE_USERS_KEY);
+        return raw ? JSON.parse(raw) : [];
+      } catch { return []; }
+    }
+
+    function saveAccounts(list) {
+      try {
+        localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(list));
+      } catch {}
+    }
 
     const PRIORITY_OPTIONS = [
       { key: "uoc_thoi", label: "Ước thôi", emoji: "💭", rank: 1, badgeClass: "bg-zinc-800/80 text-zinc-300 border-zinc-700", activeClass: "bg-rose-500/20 text-rose-200 border-rose-500 shadow-[0_0_20px_rgba(244,63,94,0.25)]" },
@@ -177,6 +192,19 @@
       editingSecretId: null,
       secretNoteDraft: "",
       configOpen: false,
+      currentUser: (() => {
+        try {
+          const raw = localStorage.getItem(AUTH_USER_KEY);
+          return raw ? JSON.parse(raw) : null;
+        } catch { return null; }
+      })(),
+      authModalOpen: false,
+      authTab: "login",
+      authUsername: "",
+      authPassword: "",
+      authNickname: "",
+      authRole: "em",
+      authError: "",
       coupleProfile: (() => {
         try {
           const raw = localStorage.getItem(COUPLE_STORAGE_KEY);
@@ -217,13 +245,21 @@
           const data = event.data;
           if (!data || !data.type) return;
           if (data.type === "WISH_CREATED" && data.payload) {
-            if (!state.wishes.some(w => w.id === data.payload.id)) {
-              state.wishes.unshift(data.payload);
+            const incoming = data.payload;
+            if (incoming.couple_code && state.coupleProfile && incoming.couple_code.toUpperCase() !== state.coupleProfile.coupleCode.toUpperCase()) {
+              return;
+            }
+            if (!state.wishes.some(w => w.id === incoming.id)) {
+              state.wishes.unshift(incoming);
               saveLocalWishes(state.wishes);
               render();
             }
           } else if (data.type === "WISH_UPDATED" && data.payload) {
-            state.wishes = state.wishes.map(w => w.id === data.payload.id ? data.payload : w);
+            const incoming = data.payload;
+            if (incoming.couple_code && state.coupleProfile && incoming.couple_code.toUpperCase() !== state.coupleProfile.coupleCode.toUpperCase()) {
+              return;
+            }
+            state.wishes = state.wishes.map(w => w.id === incoming.id ? incoming : w);
             saveLocalWishes(state.wishes);
             render();
           } else if (data.type === "WISH_DELETED" && data.payload) {
@@ -258,6 +294,12 @@
       if (e.key === COUPLE_STORAGE_KEY && e.newValue) {
         try {
           state.coupleProfile = JSON.parse(e.newValue);
+          render();
+        } catch {}
+      }
+      if (e.key === AUTH_USER_KEY && e.newValue) {
+        try {
+          state.currentUser = JSON.parse(e.newValue);
           render();
         } catch {}
       }
@@ -320,15 +362,24 @@
 
     function render() {
       const app = document.getElementById("app");
+      let visibleWishes = [];
+      if (state.coupleProfile) {
+        visibleWishes = state.wishes.filter(w => (w.couple_code && w.couple_code.toUpperCase() === state.coupleProfile.coupleCode.toUpperCase()) || (!w.couple_code && !w.author_id));
+      } else if (state.currentUser) {
+        visibleWishes = state.wishes.filter(w => (w.author_id && w.author_id === state.currentUser.id) || (!w.couple_code && !w.author_id));
+      } else {
+        visibleWishes = state.wishes.filter(w => !w.couple_code && !w.author_id);
+      }
+
       const stats = {
-        totalCount: state.wishes.length,
-        totalValue: state.wishes.reduce((s, w) => s + (w.price || 0), 0),
-        prepCount: state.wishes.filter(w => w.status === "secret_prep" || w.status === "bought").length,
-        prepBudget: state.wishes.filter(w => w.status === "secret_prep" || w.status === "bought").reduce((s, w) => s + (w.price || 0), 0),
-        giftedCount: state.wishes.filter(w => w.status === "gifted").length,
+        totalCount: visibleWishes.length,
+        totalValue: visibleWishes.reduce((s, w) => s + (w.price || 0), 0),
+        prepCount: visibleWishes.filter(w => w.status === "secret_prep" || w.status === "bought").length,
+        prepBudget: visibleWishes.filter(w => w.status === "secret_prep" || w.status === "bought").reduce((s, w) => s + (w.price || 0), 0),
+        giftedCount: visibleWishes.filter(w => w.status === "gifted").length,
       };
 
-      const filteredWishes = state.wishes
+      const filteredWishes = visibleWishes
         .filter(w => {
           if (state.filters.search && !w.title.toLowerCase().includes(state.filters.search.toLowerCase()) && !(w.notes || "").toLowerCase().includes(state.filters.search.toLowerCase())) return false;
           if (state.filters.category !== "all" && w.category !== state.filters.category) return false;
@@ -343,7 +394,7 @@
           return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
         });
 
-      const eligibleLucky = state.wishes.filter(w => {
+      const eligibleLucky = visibleWishes.filter(w => {
         if (w.status === "gifted" || w.status === "bought") return false;
         if (state.luckyBudget > 0 && (w.price || 0) > state.luckyBudget) return false;
         if (state.luckyPriority !== "all" && w.priority !== state.luckyPriority) return false;
@@ -361,14 +412,26 @@
                 <p class="text-xs sm:text-sm text-zinc-400 mt-1">Mọi điều em muốn, anh sẽ nhớ 💌</p>
               </div>
             </div>
-            <div class="flex items-center gap-2">
-              <button id="btn-open-couple" type="button" class="flex items-center gap-1.5 px-3 py-1.5 sm:py-2 rounded-full border text-xs font-semibold transition-all active:scale-[0.98] ${state.coupleProfile ? 'bg-rose-950/80 border-rose-800/60 text-rose-200 hover:bg-rose-900/80' : 'bg-zinc-800/90 border-zinc-700 text-zinc-300 hover:text-white'}">
-                <span>👥</span>
-                <span class="truncate max-w-[130px] sm:max-w-[170px]">${state.coupleProfile ? `${escapeHtml(state.coupleProfile.myName)} 💕 ${escapeHtml(state.coupleProfile.partnerName)}` : 'Kết đôi 💕'}</span>
-              </button>
+            <div class="flex items-center gap-2 flex-wrap justify-end">
+              ${state.currentUser ? `
+                <button id="btn-open-couple" type="button" class="flex items-center gap-1.5 px-3 py-1.5 sm:py-2 rounded-full border text-xs font-semibold transition-all active:scale-[0.98] ${state.coupleProfile ? 'bg-rose-950/80 border-rose-800/60 text-rose-200 hover:bg-rose-900/80' : 'bg-zinc-800/90 border-zinc-700 text-zinc-300 hover:text-white'}">
+                  <span>👥</span>
+                  <span class="truncate max-w-[130px] sm:max-w-[170px]">${state.coupleProfile ? `${escapeHtml(state.coupleProfile.myName)} 💕 ${escapeHtml(state.coupleProfile.partnerName)}` : 'Kết đôi 💕'}</span>
+                </button>
+                <div class="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-zinc-800/90 border border-zinc-700 text-zinc-200 text-xs font-medium">
+                  <span>👤</span>
+                  <span class="truncate max-w-[90px] sm:max-w-[120px]">${escapeHtml(state.currentUser.nickname)}</span>
+                  <span>${state.currentUser.role === 'anh' ? '👦' : '👧'}</span>
+                </div>
+                <button id="btn-logout" type="button" class="px-2.5 py-1.5 rounded-full bg-zinc-800/80 hover:bg-zinc-700 text-zinc-400 hover:text-rose-300 border border-zinc-700 text-xs transition-all active:scale-[0.98]" title="Đăng xuất">🚪</button>
+              ` : `
+                <button id="btn-open-auth" type="button" class="flex items-center gap-1.5 px-3.5 py-1.5 sm:py-2 rounded-full bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600 text-white text-xs font-semibold shadow-[0_2px_12px_rgba(244,63,94,0.35)] transition-all active:scale-[0.98]">
+                  <span>✨ Đăng nhập / Đăng ký</span>
+                </button>
+              `}
               <button id="btn-open-drawer" type="button" class="flex items-center gap-2 px-3.5 py-2 rounded-full bg-rose-950/60 hover:bg-rose-900/60 border border-rose-800/50 text-rose-200 text-xs sm:text-sm font-medium transition-all active:scale-[0.98]">
                 <span>💖</span>
-                <span class="tabular-nums font-semibold text-rose-100">${state.wishes.length}</span>
+                <span class="tabular-nums font-semibold text-rose-100">${visibleWishes.length}</span>
                 <span class="hidden sm:inline">điều ước trong giỏ quà</span>
                 <span class="inline sm:hidden">điều ước</span>
               </button>
@@ -386,6 +449,37 @@
             </div>
           </div>
         </header>
+
+        <!-- PRIVACY INVITATION BANNERS -->
+        ${!state.currentUser ? `
+          <div class="max-w-3xl mx-auto px-4 pt-4">
+            <div class="rounded-2xl bg-gradient-to-r from-rose-950/70 via-[#180e1d] to-pink-950/60 border border-rose-800/60 p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xl">
+              <div class="flex items-center gap-3">
+                <div class="w-11 h-11 rounded-2xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-2xl shrink-0">🔒</div>
+                <div>
+                  <h3 class="font-serif text-base sm:text-lg font-bold text-rose-200">Không gian ước mơ riêng tư của hai bạn 💕</h3>
+                  <p class="text-xs sm:text-sm text-zinc-300 mt-0.5">Mỗi người một tài khoản. Điều ước bạn thêm chỉ người yêu đã kết nối mới nhận được.</p>
+                </div>
+              </div>
+              <button id="btn-banner-auth" type="button" class="px-4 py-2 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 text-white text-xs sm:text-sm font-semibold shrink-0 shadow-[0_4px_16px_rgba(244,63,94,0.35)]">Đăng nhập / Đăng ký</button>
+            </div>
+          </div>
+        ` : ''}
+
+        ${state.currentUser && !state.coupleProfile ? `
+          <div class="max-w-3xl mx-auto px-4 pt-4">
+            <div class="rounded-2xl bg-gradient-to-r from-amber-950/60 via-[#19111c] to-rose-950/60 border border-amber-800/50 p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xl">
+              <div class="flex items-center gap-3">
+                <div class="w-11 h-11 rounded-2xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-2xl shrink-0">💌</div>
+                <div>
+                  <h3 class="font-serif text-base sm:text-lg font-bold text-amber-200">Chào ${escapeHtml(state.currentUser.nickname)}! Hãy kết đôi với người yêu 💕</h3>
+                  <p class="text-xs sm:text-sm text-zinc-300 mt-0.5">Tạo mã phòng hoặc nhập mã người yêu gửi để chỉ hai bạn nhận được điều ước của nhau.</p>
+                </div>
+              </div>
+              <button id="btn-banner-couple" type="button" class="px-4 py-2 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 text-white text-xs sm:text-sm font-semibold shrink-0 shadow-[0_4px_16px_rgba(244,63,94,0.35)]">Kết đôi ngay 💕</button>
+            </div>
+          </div>
+        ` : ''}
 
         <!-- MAIN CONTENT -->
         <main class="flex-1 pb-16">
@@ -411,7 +505,7 @@
                   </div>
 
                   <div class="space-y-2">
-                    <label for="inp-price" class="block text-xs font-semibold uppercase tracking-wider text-zinc-300">$ Giá ước tính (VNĐ)</label>
+                    <label for="inp-price" class="block text-xs font-semibold uppercase tracking-wider text-zinc-300">💰 Giá ước tính</label>
                     <div class="relative">
                       <input id="inp-price" type="text" inputmode="numeric" value="${escapeHtml(state.form.priceDisplay)}" placeholder="500,000" class="w-full rounded-xl bg-[#1d1522] border border-zinc-800 focus:border-rose-500 pl-4 pr-10 py-3 text-sm sm:text-base text-zinc-100 tabular-nums outline-none" />
                       <span class="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-amber-400">₫</span>
@@ -551,10 +645,10 @@
 
                 <div class="flex flex-wrap items-center gap-2 pt-1">
                   <button type="button" data-flt-status="all" class="btn-flt-status px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${state.filters.status === 'all' ? 'bg-rose-500 text-white border-rose-500' : 'bg-[#1d1522] text-zinc-400 border-zinc-800 hover:text-zinc-200'}">
-                    Tất cả trạng thái (${state.wishes.length})
+                    Tất cả trạng thái (${visibleWishes.length})
                   </button>
                   ${STATUS_OPTIONS.map(st => {
-                    const count = state.wishes.filter(w => (w.status || 'pending') === st.key).length;
+                    const count = visibleWishes.filter(w => (w.status || 'pending') === st.key).length;
                     return `
                       <button type="button" data-flt-status="${st.key}" class="btn-flt-status px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${state.filters.status === st.key ? 'bg-rose-500 text-white border-rose-500' : 'bg-[#1d1522] text-zinc-400 border-zinc-800 hover:text-zinc-200'}">
                         ${st.shortLabel} (${count})
@@ -659,17 +753,17 @@
           <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
             <div class="w-full max-w-2xl max-h-[88dvh] rounded-2xl bg-[#150f19] border border-rose-900/50 shadow-2xl flex flex-col overflow-hidden">
               <div class="px-6 py-4 border-b border-zinc-800 flex items-center justify-between">
-                <h3 class="font-serif text-xl sm:text-2xl font-bold text-rose-100">💖 Giỏ Quà Ước Mơ Của Em (${state.wishes.length})</h3>
+                <h3 class="font-serif text-xl sm:text-2xl font-bold text-rose-100">💖 Giỏ Quà Ước Mơ Của Em (${visibleWishes.length})</h3>
                 <button id="btn-close-drawer" type="button" class="px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs text-zinc-300">Đóng ✕</button>
               </div>
               <div class="p-5 sm:p-6 overflow-y-auto space-y-4 flex-1">
                 <p class="text-xs sm:text-sm text-zinc-400">Em có thể xem lại, chỉnh sửa thông tin món quà hoặc xóa nếu đổi ý nha. Trạng thái chuẩn bị quà của anh được giữ bí mật để tạo bất ngờ cho em ♥</p>
-                ${state.wishes.length === 0 ? `
+                ${visibleWishes.length === 0 ? `
                   <div class="py-12 text-center space-y-2">
                     <p class="text-zinc-300 font-medium">Giỏ quà ước mơ đang trống nè</p>
                     <p class="text-xs text-zinc-500">Em hãy thêm món quà đầu tiên vào danh sách nhé!</p>
                   </div>
-                ` : state.wishes.map(w => {
+                ` : visibleWishes.map(w => {
                   const pri = getPriority(w.priority);
                   const cat = getCategory(w.category);
                   if (state.editingId === w.id && state.editDraft) {
@@ -906,6 +1000,63 @@
             </div>
           </div>
         ` : ''}
+        <!-- AUTH MODAL -->
+        ${state.authModalOpen ? `
+          <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+            <div class="w-full max-w-md rounded-2xl bg-[#150f19] border border-rose-900/60 p-6 shadow-2xl space-y-5">
+              <div class="flex items-center justify-between border-b border-zinc-800 pb-4">
+                <div class="flex items-center gap-2.5">
+                  <span class="text-2xl">💖</span>
+                  <div>
+                    <h3 class="font-serif text-xl sm:text-2xl font-bold text-white">${state.authTab === 'login' ? 'Đăng Nhập Tài Khoản' : 'Đăng Ký Tài Khoản'}</h3>
+                    <p class="text-xs text-zinc-400">${state.authTab === 'login' ? 'Vào không gian ước mơ riêng của hai bạn' : 'Mỗi người một tài khoản để kết nối cùng nhau'}</p>
+                  </div>
+                </div>
+                <button id="btn-close-auth" type="button" class="px-2.5 py-1 rounded-xl bg-zinc-800 text-xs text-zinc-300">✕</button>
+              </div>
+
+              <div class="grid grid-cols-2 p-1 rounded-xl bg-[#110b14] border border-zinc-800">
+                <button id="btn-auth-tab-login" type="button" class="py-2 text-xs font-semibold rounded-lg ${state.authTab === 'login' ? 'bg-rose-500 text-white' : 'text-zinc-400'}">Đăng nhập</button>
+                <button id="btn-auth-tab-register" type="button" class="py-2 text-xs font-semibold rounded-lg ${state.authTab === 'register' ? 'bg-rose-500 text-white' : 'text-zinc-400'}">Tạo tài khoản mới</button>
+              </div>
+
+              <form id="auth-form" class="space-y-4">
+                <div class="space-y-1">
+                  <label class="block text-xs font-semibold text-zinc-300">Tên đăng nhập</label>
+                  <input id="inp-auth-username" type="text" value="${escapeHtml(state.authUsername)}" placeholder="Ví dụ: quannd, huongle..." class="w-full rounded-xl bg-[#1d1522] border border-zinc-700 px-3.5 py-2.5 text-sm text-white outline-none focus:border-rose-500" required />
+                </div>
+
+                <div class="space-y-1">
+                  <label class="block text-xs font-semibold text-zinc-300">Mật khẩu</label>
+                  <input id="inp-auth-password" type="password" value="${escapeHtml(state.authPassword)}" placeholder="••••••••" class="w-full rounded-xl bg-[#1d1522] border border-zinc-700 px-3.5 py-2.5 text-sm text-white outline-none focus:border-rose-500" required />
+                </div>
+
+                ${state.authTab === 'register' ? `
+                  <div class="space-y-1">
+                    <label class="block text-xs font-semibold text-zinc-300">Tên hiển thị hoặc Biệt danh</label>
+                    <input id="inp-auth-nickname" type="text" value="${escapeHtml(state.authNickname)}" placeholder="Ví dụ: Anh Quân, Bé Hương..." class="w-full rounded-xl bg-[#1d1522] border border-zinc-700 px-3.5 py-2.5 text-sm text-white outline-none focus:border-rose-500" />
+                  </div>
+
+                  <div class="space-y-1">
+                    <label class="block text-xs font-semibold text-zinc-300">Vai trò của bạn</label>
+                    <div class="grid grid-cols-2 gap-2">
+                      <button type="button" id="btn-auth-role-anh" class="py-2 px-3 rounded-xl border text-xs font-semibold ${state.authRole === 'anh' ? 'bg-rose-500 text-white border-rose-500' : 'bg-[#1d1522] border-zinc-800 text-zinc-400'}">Anh 👦</button>
+                      <button type="button" id="btn-auth-role-em" class="py-2 px-3 rounded-xl border text-xs font-semibold ${state.authRole === 'em' ? 'bg-pink-500 text-white border-pink-500' : 'bg-[#1d1522] border-zinc-800 text-zinc-400'}">Em 👧</button>
+                    </div>
+                  </div>
+                ` : ''}
+
+                ${state.authError ? `<div class="rounded-xl bg-rose-950/80 border border-rose-700/70 p-3 text-xs text-rose-200">${escapeHtml(state.authError)}</div>` : ''}
+
+                <div class="pt-2">
+                  <button type="submit" class="w-full py-3 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 text-white font-semibold text-sm shadow-[0_4px_20px_rgba(244,63,94,0.35)] active:scale-[0.98]">
+                    ${state.authTab === 'login' ? 'Đăng nhập ngay' : 'Tạo tài khoản và tham gia'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        ` : ''}
       `;
 
       bindEvents(eligibleLucky);
@@ -975,7 +1126,11 @@
           status: "pending",
           secret_note: "",
           is_deleted: false,
-          created_at: new Date().toISOString()
+          created_at: new Date().toISOString(),
+          author_id: state.currentUser ? state.currentUser.id : undefined,
+          author_name: state.currentUser ? (state.currentUser.nickname || state.currentUser.username) : (state.coupleProfile ? state.coupleProfile.myName : undefined),
+          author_role: state.currentUser ? state.currentUser.role : (state.coupleProfile ? state.coupleProfile.myRole : "em"),
+          couple_code: state.coupleProfile ? state.coupleProfile.coupleCode : undefined
         };
 
         if (state.sbClient) {
@@ -1266,6 +1421,17 @@
         if (confirm("Bạn có chắc muốn hủy kết đôi hiện tại không?")) {
           state.coupleProfile = null;
           localStorage.removeItem(COUPLE_STORAGE_KEY);
+          if (state.currentUser) {
+            const accounts = loadAccounts();
+            const idx = accounts.findIndex(a => a.id === state.currentUser.id);
+            if (idx >= 0) {
+              delete accounts[idx].coupleCode;
+              delete accounts[idx].partnerName;
+              saveAccounts(accounts);
+              state.currentUser = accounts[idx];
+              localStorage.setItem(AUTH_USER_KEY, JSON.stringify(state.currentUser));
+            }
+          }
           broadcastSync("COUPLE_SYNC", null);
           state.coupleModalOpen = false;
           render();
@@ -1324,6 +1490,19 @@
 
         state.coupleProfile = profile;
         localStorage.setItem(COUPLE_STORAGE_KEY, JSON.stringify(profile));
+        if (state.currentUser) {
+          const accounts = loadAccounts();
+          const idx = accounts.findIndex(a => a.id === state.currentUser.id);
+          if (idx >= 0) {
+            accounts[idx].coupleCode = code;
+            accounts[idx].partnerName = partner;
+            accounts[idx].nickname = myName;
+            accounts[idx].role = state.coupleRole;
+            saveAccounts(accounts);
+            state.currentUser = accounts[idx];
+            localStorage.setItem(AUTH_USER_KEY, JSON.stringify(state.currentUser));
+          }
+        }
         broadcastSync("COUPLE_SYNC", profile);
         if (window.confetti) confetti({ particleCount: 70, spread: 80, origin: { y: 0.6 } });
         state.coupleModalOpen = false;
@@ -1391,6 +1570,138 @@
           state.changePinModalOpen = false;
           render();
         }, 1200);
+      };
+
+      // Auth Modal & User Handlers
+      const btnOpenAuth = document.getElementById("btn-open-auth");
+      if (btnOpenAuth) btnOpenAuth.onclick = () => { state.authModalOpen = true; state.authError = ""; render(); };
+
+      const btnBannerAuth = document.getElementById("btn-banner-auth");
+      if (btnBannerAuth) btnBannerAuth.onclick = () => { state.authModalOpen = true; state.authError = ""; render(); };
+
+      const btnBannerCouple = document.getElementById("btn-banner-couple");
+      if (btnBannerCouple) btnBannerCouple.onclick = () => { state.coupleModalOpen = true; render(); };
+
+      const btnCloseAuth = document.getElementById("btn-close-auth");
+      if (btnCloseAuth) btnCloseAuth.onclick = () => { state.authModalOpen = false; render(); };
+
+      const btnLogout = document.getElementById("btn-logout");
+      if (btnLogout) btnLogout.onclick = () => {
+        state.currentUser = null;
+        localStorage.removeItem(AUTH_USER_KEY);
+        render();
+      };
+
+      const btnAuthTabLogin = document.getElementById("btn-auth-tab-login");
+      if (btnAuthTabLogin) btnAuthTabLogin.onclick = () => {
+        state.authTab = "login";
+        state.authError = "";
+        render();
+      };
+
+      const btnAuthTabRegister = document.getElementById("btn-auth-tab-register");
+      if (btnAuthTabRegister) btnAuthTabRegister.onclick = () => {
+        state.authTab = "register";
+        state.authError = "";
+        render();
+      };
+
+      const btnAuthRoleAnh = document.getElementById("btn-auth-role-anh");
+      if (btnAuthRoleAnh) btnAuthRoleAnh.onclick = () => { state.authRole = "anh"; render(); };
+
+      const btnAuthRoleEm = document.getElementById("btn-auth-role-em");
+      if (btnAuthRoleEm) btnAuthRoleEm.onclick = () => { state.authRole = "em"; render(); };
+
+      const inpAuthUser = document.getElementById("inp-auth-username");
+      if (inpAuthUser) inpAuthUser.oninput = (e) => { state.authUsername = e.target.value; };
+
+      const inpAuthPass = document.getElementById("inp-auth-password");
+      if (inpAuthPass) inpAuthPass.oninput = (e) => { state.authPassword = e.target.value; };
+
+      const inpAuthNick = document.getElementById("inp-auth-nickname");
+      if (inpAuthNick) inpAuthNick.oninput = (e) => { state.authNickname = e.target.value; };
+
+      const authForm = document.getElementById("auth-form");
+      if (authForm) authForm.onsubmit = (e) => {
+        e.preventDefault();
+        state.authError = "";
+        const username = state.authUsername.trim().toLowerCase();
+        const password = state.authPassword.trim();
+        if (!username || !password) {
+          state.authError = "Vui lòng nhập đầy đủ tên đăng nhập và mật khẩu.";
+          render();
+          return;
+        }
+
+        const accounts = loadAccounts();
+        if (state.authTab === "login") {
+          const found = accounts.find(a => a.username.toLowerCase() === username && a.password === password);
+          if (!found) {
+            state.authError = "Tên đăng nhập hoặc mật khẩu không chính xác.";
+            render();
+            return;
+          }
+          state.currentUser = found;
+          localStorage.setItem(AUTH_USER_KEY, JSON.stringify(found));
+          if (found.coupleCode) {
+            state.coupleProfile = {
+              coupleCode: found.coupleCode,
+              myRole: found.role,
+              myName: found.nickname || found.username,
+              partnerName: found.partnerName || (found.role === "anh" ? "Em yêu" : "Anh yêu"),
+              matchedAt: new Date().toISOString()
+            };
+            localStorage.setItem(COUPLE_STORAGE_KEY, JSON.stringify(state.coupleProfile));
+          }
+          state.authModalOpen = false;
+          state.authPassword = "";
+          render();
+        } else {
+          // Register
+          if (username.length < 3) {
+            state.authError = "Tên đăng nhập cần có tối thiểu 3 ký tự.";
+            render();
+            return;
+          }
+          if (password.length < 4) {
+            state.authError = "Mật khẩu cần có tối thiểu 4 ký tự.";
+            render();
+            return;
+          }
+          if (accounts.some(a => a.username.toLowerCase() === username)) {
+            state.authError = "Tên đăng nhập này đã tồn tại. Bạn hãy chọn tên khác nhé.";
+            render();
+            return;
+          }
+
+          const nickname = state.authNickname.trim() || (state.authRole === "anh" ? "Anh" : "Em");
+          const newAcc = {
+            id: "usr-" + Date.now() + "-" + Math.random().toString(36).substring(2, 7),
+            username: username,
+            password: password,
+            nickname: nickname,
+            role: state.authRole,
+            coupleCode: state.coupleProfile ? state.coupleProfile.coupleCode : undefined,
+            partnerName: state.coupleProfile ? state.coupleProfile.partnerName : undefined,
+            createdAt: new Date().toISOString()
+          };
+
+          accounts.push(newAcc);
+          saveAccounts(accounts);
+          state.currentUser = newAcc;
+          localStorage.setItem(AUTH_USER_KEY, JSON.stringify(newAcc));
+          state.authModalOpen = false;
+          state.authPassword = "";
+
+          if (!state.coupleProfile) {
+            state.coupleModalOpen = true;
+            state.coupleMyName = nickname;
+            state.coupleRole = state.authRole;
+          }
+
+          if (window.confetti) confetti({ particleCount: 65, spread: 70, origin: { y: 0.6 } });
+          render();
+        }
       };
     }
 
