@@ -69,13 +69,44 @@
     const SUPABASE_ANON_KEY = "couple_wishlist_sb_key_v2";
     const COUPLE_STORAGE_KEY = "couple_wishlist_profile_v1";
     const AUTH_USER_KEY = "couple_wishlist_user_v1";
+    const SESSION_LOGOUT_KEY = "couple_wishlist_logged_out_v1";
     const STORAGE_USERS_KEY = "couple_wishlist_accounts_v1";
+    const STORAGE_ROOMS_KEY = "couple_wishlist_rooms_v1";
     const SYNC_CHANNEL_NAME = "couple_wishlist_sync_v1";
+
+    function generateInviteCode(existingAccounts) {
+      const words = ["LOVE", "TIM", "DUYEN", "CHIP", "MEO", "GAU", "BEE"];
+      const list = Array.isArray(existingAccounts) ? existingAccounts : [];
+      for (let i = 0; i < 50; i++) {
+        const prefix = words[Math.floor(Math.random() * words.length)];
+        const code = prefix + "-" + Math.floor(100 + Math.random() * 900);
+        if (!list.some(a => a.inviteCode === code || a.coupleCode === code)) {
+          return code;
+        }
+      }
+      return "LOVE-" + Math.floor(1000 + Math.random() * 9000);
+    }
 
     function loadAccounts() {
       try {
         const raw = localStorage.getItem(STORAGE_USERS_KEY);
-        return raw ? JSON.parse(raw) : [];
+        const list = raw ? JSON.parse(raw) : [];
+        if (!Array.isArray(list)) return [];
+        let changed = false;
+        list.forEach(acc => {
+          if (!acc.inviteCode) {
+            acc.inviteCode = generateInviteCode(list);
+            changed = true;
+          }
+          if (acc.coupleCode && acc.partnerName && acc.isMatched === undefined) {
+            acc.isMatched = true;
+            changed = true;
+          }
+        });
+        if (changed) {
+          localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(list));
+        }
+        return list;
       } catch { return []; }
     }
 
@@ -83,6 +114,43 @@
       try {
         localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(list));
       } catch {}
+    }
+
+    function buildCoupleProfileFromUser(user, accounts) {
+      if (!user || !user.coupleCode || !user.isMatched) return null;
+      const all = Array.isArray(accounts) ? accounts : loadAccounts();
+      const partner = all.find(a =>
+        a.id !== user.id &&
+        ((user.partnerId && a.id === user.partnerId) ||
+         (a.coupleCode && a.coupleCode.toUpperCase() === user.coupleCode.toUpperCase()))
+      );
+      const partnerName = partner
+        ? (partner.nickname || partner.username)
+        : (user.partnerName || (user.role === "anh" ? "Em yêu" : "Anh yêu"));
+      return {
+        coupleCode: user.coupleCode.toUpperCase(),
+        myRole: user.role || "em",
+        myName: user.nickname || user.username,
+        partnerName: partnerName,
+        partnerId: partner ? partner.id : user.partnerId,
+        isMatched: true,
+        matchedAt: user.matchedAt || new Date().toISOString()
+      };
+    }
+
+    function loadInitialCurrentUser() {
+      try {
+        if (sessionStorage.getItem(SESSION_LOGOUT_KEY) === "true") return null;
+        const sessionRaw = sessionStorage.getItem(AUTH_USER_KEY);
+        const localRaw = localStorage.getItem(AUTH_USER_KEY);
+        const parsed = sessionRaw ? JSON.parse(sessionRaw) : (localRaw ? JSON.parse(localRaw) : null);
+        if (!parsed || !parsed.id) return null;
+        const accounts = loadAccounts();
+        const fresh = accounts.find(a => a.id === parsed.id) || parsed;
+        if (!fresh.inviteCode) fresh.inviteCode = generateInviteCode(accounts);
+        sessionStorage.setItem(AUTH_USER_KEY, JSON.stringify(fresh));
+        return fresh;
+      } catch { return null; }
     }
 
     const PRIORITY_OPTIONS = [
@@ -192,12 +260,7 @@
       editingSecretId: null,
       secretNoteDraft: "",
       configOpen: false,
-      currentUser: (() => {
-        try {
-          const raw = localStorage.getItem(AUTH_USER_KEY);
-          return raw ? JSON.parse(raw) : null;
-        } catch { return null; }
-      })(),
+      currentUser: loadInitialCurrentUser(),
       authModalOpen: false,
       authTab: "login",
       authUsername: "",
@@ -205,20 +268,17 @@
       authNickname: "",
       authRole: "em",
       authError: "",
-      coupleProfile: (() => {
-        try {
-          const raw = localStorage.getItem(COUPLE_STORAGE_KEY);
-          return raw ? JSON.parse(raw) : null;
-        } catch { return null; }
-      })(),
+      coupleProfile: null,
       coupleModalOpen: false,
+      coupleError: "",
+      coupleSuccess: "",
       changePinModalOpen: false,
       pinChangeOld: "",
       pinChangeNew: "",
       pinChangeConfirm: "",
       pinChangeError: "",
       pinChangeSuccess: false,
-      coupleMode: "create",
+      coupleMode: "join",
       coupleMyName: "",
       couplePartnerName: "",
       coupleRole: "anh",
@@ -237,6 +297,33 @@
       sbClient: null
     };
 
+    function syncCurrentUserFromAccounts() {
+      if (!state.currentUser) {
+        state.coupleProfile = null;
+        return;
+      }
+      const accounts = loadAccounts();
+      const fresh = accounts.find(a => a.id === state.currentUser.id);
+      if (fresh) {
+        state.currentUser = fresh;
+        try {
+          sessionStorage.setItem(AUTH_USER_KEY, JSON.stringify(fresh));
+        } catch {}
+      }
+      state.coupleProfile = buildCoupleProfileFromUser(state.currentUser, accounts);
+      if (state.coupleProfile) {
+        try {
+          sessionStorage.setItem(COUPLE_STORAGE_KEY, JSON.stringify(state.coupleProfile));
+        } catch {}
+      } else {
+        try {
+          sessionStorage.removeItem(COUPLE_STORAGE_KEY);
+        } catch {}
+      }
+    }
+
+    syncCurrentUserFromAccounts();
+
     let syncChannel = null;
     if ("BroadcastChannel" in window) {
       try {
@@ -246,9 +333,6 @@
           if (!data || !data.type) return;
           if (data.type === "WISH_CREATED" && data.payload) {
             const incoming = data.payload;
-            if (incoming.couple_code && state.coupleProfile && incoming.couple_code.toUpperCase() !== state.coupleProfile.coupleCode.toUpperCase()) {
-              return;
-            }
             if (!state.wishes.some(w => w.id === incoming.id)) {
               state.wishes.unshift(incoming);
               saveLocalWishes(state.wishes);
@@ -256,9 +340,6 @@
             }
           } else if (data.type === "WISH_UPDATED" && data.payload) {
             const incoming = data.payload;
-            if (incoming.couple_code && state.coupleProfile && incoming.couple_code.toUpperCase() !== state.coupleProfile.coupleCode.toUpperCase()) {
-              return;
-            }
             state.wishes = state.wishes.map(w => w.id === incoming.id ? incoming : w);
             saveLocalWishes(state.wishes);
             render();
@@ -266,8 +347,13 @@
             state.wishes = state.wishes.filter(w => w.id !== String(data.payload));
             saveLocalWishes(state.wishes);
             render();
-          } else if (data.type === "COUPLE_SYNC") {
-            state.coupleProfile = data.payload;
+          } else if (data.type === "WISHES_SYNC" && Array.isArray(data.payload)) {
+            state.wishes = data.payload;
+            saveLocalWishes(state.wishes);
+            render();
+          } else if (data.type === "ACCOUNTS_UPDATED" || data.type === "COUPLE_SYNC") {
+            syncCurrentUserFromAccounts();
+            state.wishes = loadLocalWishes();
             render();
           } else if (data.type === "PIN_UPDATED" && data.payload) {
             state.adminPin = String(data.payload);
@@ -291,17 +377,10 @@
           render();
         } catch {}
       }
-      if (e.key === COUPLE_STORAGE_KEY && e.newValue) {
-        try {
-          state.coupleProfile = JSON.parse(e.newValue);
-          render();
-        } catch {}
-      }
-      if (e.key === AUTH_USER_KEY && e.newValue) {
-        try {
-          state.currentUser = JSON.parse(e.newValue);
-          render();
-        } catch {}
+      if (e.key === STORAGE_USERS_KEY) {
+        syncCurrentUserFromAccounts();
+        state.wishes = loadLocalWishes();
+        render();
       }
       if (e.key === CUSTOM_PIN_KEY && e.newValue) {
         state.adminPin = e.newValue;
@@ -363,12 +442,18 @@
     function render() {
       const app = document.getElementById("app");
       let visibleWishes = [];
-      if (state.coupleProfile) {
-        visibleWishes = state.wishes.filter(w => (w.couple_code && w.couple_code.toUpperCase() === state.coupleProfile.coupleCode.toUpperCase()) || (!w.couple_code && !w.author_id));
+      if (state.coupleProfile && state.coupleProfile.coupleCode) {
+        const activeCode = state.coupleProfile.coupleCode.toUpperCase();
+        const myId = state.currentUser ? state.currentUser.id : null;
+        const partnerId = state.coupleProfile.partnerId || null;
+        visibleWishes = state.wishes.filter(w =>
+          (w.couple_code && w.couple_code.toUpperCase() === activeCode) ||
+          (w.author_id && (w.author_id === myId || (partnerId && w.author_id === partnerId)))
+        );
       } else if (state.currentUser) {
-        visibleWishes = state.wishes.filter(w => (w.author_id && w.author_id === state.currentUser.id) || (!w.couple_code && !w.author_id));
+        visibleWishes = state.wishes.filter(w => w.author_id && w.author_id === state.currentUser.id);
       } else {
-        visibleWishes = state.wishes.filter(w => !w.couple_code && !w.author_id);
+        visibleWishes = [];
       }
 
       const stats = {
@@ -890,7 +975,7 @@
                   <span class="text-2xl">👥</span>
                   <div>
                     <h3 class="font-serif text-xl font-bold text-white">Kết Đôi Danh Sách Ước Mơ</h3>
-                    <p class="text-xs text-zinc-400">Kết nối hai bạn để cùng xem và quản lý điều ước</p>
+                    <p class="text-xs text-zinc-400">Kết nối hai tài khoản để chỉ hai bạn nhận được điều ước của nhau</p>
                   </div>
                 </div>
                 <button id="btn-close-couple" type="button" class="px-2.5 py-1 rounded-xl bg-zinc-800 text-xs text-zinc-300">✕</button>
@@ -899,11 +984,11 @@
               ${state.coupleProfile ? `
                 <div class="rounded-xl bg-rose-950/40 border border-rose-800/50 p-4 space-y-3">
                   <div class="flex items-center justify-between">
-                    <span class="text-xs text-rose-300 font-medium">Trạng thái: Đã kết đôi</span>
+                    <span class="text-xs text-rose-300 font-medium">Trạng thái: Đã kết đôi 💕</span>
                     <span class="px-2.5 py-0.5 rounded-full bg-rose-500/20 text-rose-300 text-xs font-semibold">Mã: #${escapeHtml(state.coupleProfile.coupleCode)}</span>
                   </div>
                   <p class="text-sm text-zinc-200">
-                    Bạn là <strong class="text-rose-300">${escapeHtml(state.coupleProfile.myName)}</strong> (${state.coupleProfile.myRole === 'anh' ? 'Anh' : 'Em'})
+                    Bạn là <strong class="text-rose-300">${escapeHtml(state.coupleProfile.myName)}</strong>
                     đang kết đôi cùng <strong class="text-rose-300">${escapeHtml(state.coupleProfile.partnerName)}</strong>
                   </p>
                   <div class="flex items-center gap-2 pt-2">
@@ -912,50 +997,55 @@
                   </div>
                 </div>
               ` : `
-                <div class="grid grid-cols-2 p-1 rounded-xl bg-[#110b14] border border-zinc-800">
-                  <button id="btn-couple-mode-create" type="button" class="py-2 text-xs font-semibold rounded-lg ${state.coupleMode === 'create' ? 'bg-rose-500 text-white' : 'text-zinc-400'}">Tạo phòng kết đôi</button>
-                  <button id="btn-couple-mode-join" type="button" class="py-2 text-xs font-semibold rounded-lg ${state.coupleMode === 'join' ? 'bg-rose-500 text-white' : 'text-zinc-400'}">Tham gia bằng mã</button>
+                <div class="rounded-xl bg-[#1d1522] border border-rose-900/50 p-4 flex items-center justify-between gap-3">
+                  <div>
+                    <span class="text-xs text-zinc-400 block">Mã kết đôi của bạn để gửi cho người yêu:</span>
+                    <div class="flex items-center gap-2 mt-1">
+                      <span class="font-mono font-bold text-rose-300 text-lg">#${escapeHtml(state.currentUser ? state.currentUser.inviteCode : state.coupleGeneratedCode)}</span>
+                      ${state.currentUser ? `<span class="text-xs px-2 py-0.5 rounded-lg bg-zinc-800 text-zinc-300">hoặc @${escapeHtml(state.currentUser.username)}</span>` : ''}
+                    </div>
+                  </div>
+                  <button type="button" id="btn-copy-my-invite" class="px-3 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold text-rose-200 shrink-0">Sao chép mã</button>
                 </div>
 
                 <form id="couple-form" class="space-y-4">
-                  <div class="space-y-1">
-                    <label class="block text-xs font-semibold text-zinc-300">Tên của bạn</label>
-                    <input id="inp-couple-my-name" type="text" value="${escapeHtml(state.coupleMyName)}" placeholder="Tên của bạn" class="w-full rounded-xl bg-[#1d1522] border border-zinc-700 px-3.5 py-2.5 text-sm text-white outline-none focus:border-rose-500" required />
+                  <div class="space-y-1.5">
+                    <label class="block text-xs font-semibold text-zinc-300">Nhập mã kết đôi hoặc tên đăng nhập của người yêu</label>
+                    <input id="inp-couple-code" type="text" value="${escapeHtml(state.coupleCodeInput)}" placeholder="Nhập mã kết đôi hoặc tên đăng nhập" class="w-full rounded-xl bg-[#1d1522] border border-zinc-700 px-3.5 py-2.5 text-sm font-mono font-bold text-white outline-none focus:border-rose-500" required />
                   </div>
 
-                  <div class="space-y-1">
-                    <label class="block text-xs font-semibold text-zinc-300">Vai trò của bạn</label>
-                    <div class="grid grid-cols-2 gap-2">
-                      <button type="button" id="btn-role-anh" class="py-2.5 rounded-xl border text-xs font-semibold ${state.coupleRole === 'anh' ? 'bg-rose-500/20 border-rose-500 text-rose-200' : 'bg-[#1d1522] border-zinc-800 text-zinc-400'}">Anh 👦</button>
-                      <button type="button" id="btn-role-em" class="py-2.5 rounded-xl border text-xs font-semibold ${state.coupleRole === 'em' ? 'bg-rose-500/20 border-rose-500 text-rose-200' : 'bg-[#1d1522] border-zinc-800 text-zinc-400'}">Em 👧</button>
-                    </div>
-                  </div>
+                  ${state.coupleError ? `<div class="rounded-xl bg-rose-950/80 border border-rose-700/70 px-3.5 py-2.5 text-xs text-rose-200">${escapeHtml(state.coupleError)}</div>` : ''}
+                  ${state.coupleSuccess ? `<div class="rounded-xl bg-emerald-950/80 border border-emerald-700/70 px-3.5 py-2.5 text-xs text-emerald-200">${escapeHtml(state.coupleSuccess)}</div>` : ''}
 
-                  ${state.coupleMode === 'create' ? `
-                    <div class="space-y-1">
-                      <label class="block text-xs font-semibold text-zinc-300">Tên người yêu của bạn</label>
-                      <input id="inp-couple-partner-name" type="text" value="${escapeHtml(state.couplePartnerName)}" placeholder="${state.coupleRole === 'anh' ? 'Em yêu' : 'Anh yêu'}" class="w-full rounded-xl bg-[#1d1522] border border-zinc-700 px-3.5 py-2.5 text-sm text-white outline-none focus:border-rose-500" />
-                    </div>
-                    <div class="rounded-xl bg-[#1d1522] border border-zinc-800 p-3 flex items-center justify-between">
-                      <div>
-                        <span class="text-xs text-zinc-400 block">Mã phòng kết đôi ngẫu nhiên:</span>
-                        <span class="font-mono font-bold text-rose-300 text-base">${escapeHtml(state.coupleGeneratedCode)}</span>
-                      </div>
-                      <button type="button" id="btn-regen-code" class="text-xs text-zinc-400 hover:text-white">Đổi mã ↻</button>
-                    </div>
-                  ` : `
-                    <div class="space-y-1">
-                      <label class="block text-xs font-semibold text-zinc-300">Nhập mã kết đôi từ người yêu</label>
-                      <input id="inp-couple-code" type="text" value="${escapeHtml(state.coupleCodeInput)}" placeholder="Nhập mã phòng" class="w-full rounded-xl bg-[#1d1522] border border-zinc-700 px-3.5 py-2.5 text-sm uppercase font-mono font-bold text-white outline-none focus:border-rose-500" required />
-                    </div>
-                  `}
-
-                  <div class="pt-2">
+                  <div class="pt-1">
                     <button type="submit" class="w-full py-3 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600 text-white font-semibold text-sm shadow-[0_4px_20px_rgba(244,63,94,0.35)] active:scale-[0.98]">
-                      ${state.coupleMode === 'create' ? 'Tạo phòng kết đôi 💕' : 'Kết nối phòng 💕'}
+                      Kết nối hai tài khoản 💕
                     </button>
                   </div>
                 </form>
+
+                ${(() => {
+                  const others = loadAccounts().filter(a => !state.currentUser || a.id !== state.currentUser.id);
+                  if (others.length === 0) return '';
+                  return `
+                    <div class="pt-3 border-t border-zinc-800/80 space-y-2">
+                      <span class="block text-xs font-semibold text-zinc-400">Kết nối nhanh với tài khoản trên trình duyệt này:</span>
+                      <div class="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                        ${others.map(acc => `
+                          <div class="flex items-center justify-between px-3 py-2 rounded-xl bg-[#110b14] border border-zinc-800">
+                            <div class="text-xs">
+                              <span class="font-semibold text-zinc-200">${escapeHtml(acc.nickname || acc.username)}</span>
+                              <span class="text-zinc-500 ml-1">@${escapeHtml(acc.username)} · #${escapeHtml(acc.inviteCode || '')}</span>
+                            </div>
+                            <button type="button" data-quick-connect-id="${escapeHtml(acc.id)}" class="btn-quick-connect px-3 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500 text-rose-200 hover:text-white border border-rose-500/40 text-xs font-semibold transition-all">
+                              Kết nối 💕
+                            </button>
+                          </div>
+                        `).join('')}
+                      </div>
+                    </div>
+                  `;
+                })()}
               `}
             </div>
           </div>
@@ -1401,11 +1491,129 @@
       });
 
       // Couple Matching Handlers
+      function performAccountPairing(partnerAcc, customRawCode) {
+        if (!state.currentUser) {
+          state.coupleError = "Bạn hãy đăng nhập hoặc đăng ký tài khoản trước khi kết đôi nhé.";
+          render();
+          return;
+        }
+        const accounts = loadAccounts();
+        const myIdx = accounts.findIndex(a => a.id === state.currentUser.id);
+        if (myIdx < 0) {
+          state.coupleError = "Không tìm thấy tài khoản hiện tại của bạn.";
+          render();
+          return;
+        }
+        const myAcc = accounts[myIdx];
+        const nowIso = new Date().toISOString();
+
+        if (partnerAcc) {
+          if (partnerAcc.id === myAcc.id) {
+            state.coupleError = "Đây là mã kết đôi của chính bạn. Hãy nhập mã của người yêu nhé!";
+            render();
+            return;
+          }
+          const pIdx = accounts.findIndex(a => a.id === partnerAcc.id);
+          if (pIdx < 0) {
+            state.coupleError = "Không tìm thấy tài khoản người yêu.";
+            render();
+            return;
+          }
+          const targetAcc = accounts[pIdx];
+          const sharedCode = (targetAcc.coupleCode || targetAcc.inviteCode || myAcc.inviteCode || generateInviteCode(accounts)).toUpperCase();
+
+          myAcc.coupleCode = sharedCode;
+          myAcc.partnerId = targetAcc.id;
+          myAcc.partnerName = targetAcc.nickname || targetAcc.username;
+          myAcc.isMatched = true;
+          myAcc.matchedAt = nowIso;
+
+          targetAcc.coupleCode = sharedCode;
+          targetAcc.partnerId = myAcc.id;
+          targetAcc.partnerName = myAcc.nickname || myAcc.username;
+          targetAcc.isMatched = true;
+          targetAcc.matchedAt = nowIso;
+
+          saveAccounts(accounts);
+
+          // Migrate wishes authored by either partner to the shared couple code
+          let wishesChanged = false;
+          state.wishes = state.wishes.map(w => {
+            if (w.author_id === myAcc.id || w.author_id === targetAcc.id) {
+              if (w.couple_code !== sharedCode) {
+                wishesChanged = true;
+                return { ...w, couple_code: sharedCode };
+              }
+            }
+            return w;
+          });
+          if (wishesChanged) {
+            saveLocalWishes(state.wishes);
+            broadcastSync("WISHES_SYNC", state.wishes);
+          }
+
+          syncCurrentUserFromAccounts();
+          broadcastSync("ACCOUNTS_UPDATED", { sharedCode });
+          state.coupleCodeInput = "";
+          state.coupleError = "";
+          state.coupleSuccess = "";
+          state.coupleModalOpen = false;
+          if (window.confetti) confetti({ particleCount: 70, spread: 80, origin: { y: 0.6 } });
+          render();
+          return;
+        }
+
+        // Fallback if entering a room code from another device/browser
+        const cleanCode = String(customRawCode || "").replace(/^[@#]/, "").trim().toUpperCase();
+        if (!cleanCode) {
+          state.coupleError = "Vui lòng nhập mã kết đôi hoặc tên đăng nhập của người yêu.";
+          render();
+          return;
+        }
+        myAcc.coupleCode = cleanCode;
+        myAcc.partnerName = myAcc.partnerName || (myAcc.role === "anh" ? "Em yêu" : "Anh yêu");
+        myAcc.isMatched = true;
+        myAcc.matchedAt = nowIso;
+        saveAccounts(accounts);
+
+        let wishesChanged = false;
+        state.wishes = state.wishes.map(w => {
+          if (w.author_id === myAcc.id && w.couple_code !== cleanCode) {
+            wishesChanged = true;
+            return { ...w, couple_code: cleanCode };
+          }
+          return w;
+        });
+        if (wishesChanged) {
+          saveLocalWishes(state.wishes);
+          broadcastSync("WISHES_SYNC", state.wishes);
+        }
+
+        syncCurrentUserFromAccounts();
+        broadcastSync("ACCOUNTS_UPDATED", { sharedCode: cleanCode });
+        state.coupleCodeInput = "";
+        state.coupleError = "";
+        state.coupleSuccess = "";
+        state.coupleModalOpen = false;
+        if (window.confetti) confetti({ particleCount: 70, spread: 80, origin: { y: 0.6 } });
+        render();
+      }
+
       const btnOpenCouple = document.getElementById("btn-open-couple");
-      if (btnOpenCouple) btnOpenCouple.onclick = () => { state.coupleModalOpen = true; render(); };
+      if (btnOpenCouple) btnOpenCouple.onclick = () => {
+        state.coupleModalOpen = true;
+        state.coupleError = "";
+        state.coupleSuccess = "";
+        render();
+      };
 
       const btnCloseCouple = document.getElementById("btn-close-couple");
-      if (btnCloseCouple) btnCloseCouple.onclick = () => { state.coupleModalOpen = false; render(); };
+      if (btnCloseCouple) btnCloseCouple.onclick = () => {
+        state.coupleModalOpen = false;
+        state.coupleError = "";
+        state.coupleSuccess = "";
+        render();
+      };
 
       const btnCopyCode = document.getElementById("btn-copy-code");
       if (btnCopyCode) btnCopyCode.onclick = () => {
@@ -1416,97 +1624,95 @@
         }
       };
 
+      const btnCopyMyInvite = document.getElementById("btn-copy-my-invite");
+      if (btnCopyMyInvite) btnCopyMyInvite.onclick = () => {
+        const codeToCopy = state.currentUser ? state.currentUser.inviteCode : state.coupleGeneratedCode;
+        navigator.clipboard.writeText(codeToCopy);
+        btnCopyMyInvite.textContent = "Đã sao chép! ✓";
+        setTimeout(() => { if (btnCopyMyInvite) btnCopyMyInvite.textContent = "Sao chép mã"; }, 2000);
+      };
+
       const btnDisconnectCouple = document.getElementById("btn-disconnect-couple");
       if (btnDisconnectCouple) btnDisconnectCouple.onclick = () => {
         if (confirm("Bạn có chắc muốn hủy kết đôi hiện tại không?")) {
+          const oldCode = state.coupleProfile ? state.coupleProfile.coupleCode : null;
+          const oldPartnerId = state.coupleProfile ? state.coupleProfile.partnerId : null;
           state.coupleProfile = null;
+          try { sessionStorage.removeItem(COUPLE_STORAGE_KEY); } catch {}
           localStorage.removeItem(COUPLE_STORAGE_KEY);
           if (state.currentUser) {
             const accounts = loadAccounts();
-            const idx = accounts.findIndex(a => a.id === state.currentUser.id);
-            if (idx >= 0) {
-              delete accounts[idx].coupleCode;
-              delete accounts[idx].partnerName;
-              saveAccounts(accounts);
-              state.currentUser = accounts[idx];
-              localStorage.setItem(AUTH_USER_KEY, JSON.stringify(state.currentUser));
-            }
+            accounts.forEach(acc => {
+              if (
+                acc.id === state.currentUser.id ||
+                (oldPartnerId && acc.id === oldPartnerId) ||
+                (oldCode && acc.coupleCode && acc.coupleCode.toUpperCase() === oldCode.toUpperCase())
+              ) {
+                delete acc.coupleCode;
+                delete acc.partnerId;
+                delete acc.partnerName;
+                acc.isMatched = false;
+              }
+            });
+            saveAccounts(accounts);
+            syncCurrentUserFromAccounts();
           }
-          broadcastSync("COUPLE_SYNC", null);
+          broadcastSync("ACCOUNTS_UPDATED", { disconnected: true });
           state.coupleModalOpen = false;
           render();
         }
       };
 
-      const btnCoupleModeCreate = document.getElementById("btn-couple-mode-create");
-      if (btnCoupleModeCreate) btnCoupleModeCreate.onclick = () => { state.coupleMode = "create"; render(); };
-
-      const btnCoupleModeJoin = document.getElementById("btn-couple-mode-join");
-      if (btnCoupleModeJoin) btnCoupleModeJoin.onclick = () => { state.coupleMode = "join"; render(); };
-
-      const btnRoleAnh = document.getElementById("btn-role-anh");
-      if (btnRoleAnh) btnRoleAnh.onclick = () => { state.coupleRole = "anh"; render(); };
-
-      const btnRoleEm = document.getElementById("btn-role-em");
-      if (btnRoleEm) btnRoleEm.onclick = () => { state.coupleRole = "em"; render(); };
-
-      const btnRegenCode = document.getElementById("btn-regen-code");
-      if (btnRegenCode) btnRegenCode.onclick = () => {
-        const words = ["LOVE", "TIM", "DUYEN", "CHIP", "MEO", "GAU", "BEE"];
-        const prefix = words[Math.floor(Math.random() * words.length)];
-        state.coupleGeneratedCode = prefix + "-" + Math.floor(100 + Math.random() * 900);
-        render();
+      const inpCoupleCode = document.getElementById("inp-couple-code");
+      if (inpCoupleCode) inpCoupleCode.oninput = (e) => {
+        state.coupleCodeInput = e.target.value;
+        state.coupleError = "";
       };
 
-      const inpCoupleMyName = document.getElementById("inp-couple-my-name");
-      if (inpCoupleMyName) inpCoupleMyName.oninput = (e) => { state.coupleMyName = e.target.value; };
-
-      const inpCouplePartnerName = document.getElementById("inp-couple-partner-name");
-      if (inpCouplePartnerName) inpCouplePartnerName.oninput = (e) => { state.couplePartnerName = e.target.value; };
-
-      const inpCoupleCode = document.getElementById("inp-couple-code");
-      if (inpCoupleCode) inpCoupleCode.oninput = (e) => { state.coupleCodeInput = e.target.value.toUpperCase(); };
+      document.querySelectorAll(".btn-quick-connect").forEach(btn => {
+        btn.onclick = () => {
+          const targetId = btn.getAttribute("data-quick-connect-id");
+          const accounts = loadAccounts();
+          const partnerAcc = accounts.find(a => a.id === targetId);
+          if (partnerAcc) {
+            performAccountPairing(partnerAcc, "");
+          }
+        };
+      });
 
       const coupleForm = document.getElementById("couple-form");
       if (coupleForm) coupleForm.onsubmit = (e) => {
         e.preventDefault();
-        const myName = state.coupleMyName.trim();
-        if (!myName) return;
-        let code = state.coupleGeneratedCode;
-        let partner = state.couplePartnerName.trim() || (state.coupleRole === "anh" ? "Em yêu" : "Anh yêu");
-
-        if (state.coupleMode === "join") {
-          code = state.coupleCodeInput.trim().toUpperCase();
-          if (!code) return;
+        state.coupleError = "";
+        const rawInput = state.coupleCodeInput.trim();
+        if (!rawInput) {
+          state.coupleError = "Vui lòng nhập mã kết đôi hoặc tên đăng nhập của người yêu.";
+          render();
+          return;
         }
+        const cleanUpper = rawInput.replace(/^[@#]/, "").trim().toUpperCase();
+        const cleanLower = rawInput.replace(/^[@#]/, "").trim().toLowerCase();
+        const accounts = loadAccounts();
 
-        const profile = {
-          coupleCode: code,
-          myRole: state.coupleRole,
-          myName: myName,
-          partnerName: partner,
-          matchedAt: new Date().toISOString()
-        };
-
-        state.coupleProfile = profile;
-        localStorage.setItem(COUPLE_STORAGE_KEY, JSON.stringify(profile));
+        // Check if the user entered their own code or username
         if (state.currentUser) {
-          const accounts = loadAccounts();
-          const idx = accounts.findIndex(a => a.id === state.currentUser.id);
-          if (idx >= 0) {
-            accounts[idx].coupleCode = code;
-            accounts[idx].partnerName = partner;
-            accounts[idx].nickname = myName;
-            accounts[idx].role = state.coupleRole;
-            saveAccounts(accounts);
-            state.currentUser = accounts[idx];
-            localStorage.setItem(AUTH_USER_KEY, JSON.stringify(state.currentUser));
+          const myInvite = (state.currentUser.inviteCode || "").toUpperCase();
+          const myUser = (state.currentUser.username || "").toLowerCase();
+          if (cleanUpper === myInvite || cleanLower === myUser) {
+            state.coupleError = "Đây là mã hoặc tài khoản của chính bạn. Hãy nhập mã của người yêu nhé!";
+            render();
+            return;
           }
         }
-        broadcastSync("COUPLE_SYNC", profile);
-        if (window.confetti) confetti({ particleCount: 70, spread: 80, origin: { y: 0.6 } });
-        state.coupleModalOpen = false;
-        render();
+
+        const partnerAcc = accounts.find(a =>
+          (!state.currentUser || a.id !== state.currentUser.id) &&
+          ((a.inviteCode && a.inviteCode.toUpperCase() === cleanUpper) ||
+           (a.coupleCode && a.coupleCode.toUpperCase() === cleanUpper) ||
+           (a.username && a.username.toLowerCase() === cleanLower))
+        );
+
+        performAccountPairing(partnerAcc || null, cleanUpper);
       };
 
       // Change PIN Modal Handlers
@@ -1580,7 +1786,12 @@
       if (btnBannerAuth) btnBannerAuth.onclick = () => { state.authModalOpen = true; state.authError = ""; render(); };
 
       const btnBannerCouple = document.getElementById("btn-banner-couple");
-      if (btnBannerCouple) btnBannerCouple.onclick = () => { state.coupleModalOpen = true; render(); };
+      if (btnBannerCouple) btnBannerCouple.onclick = () => {
+        state.coupleModalOpen = true;
+        state.coupleError = "";
+        state.coupleSuccess = "";
+        render();
+      };
 
       const btnCloseAuth = document.getElementById("btn-close-auth");
       if (btnCloseAuth) btnCloseAuth.onclick = () => { state.authModalOpen = false; render(); };
@@ -1588,7 +1799,14 @@
       const btnLogout = document.getElementById("btn-logout");
       if (btnLogout) btnLogout.onclick = () => {
         state.currentUser = null;
+        state.coupleProfile = null;
+        try {
+          sessionStorage.setItem(SESSION_LOGOUT_KEY, "true");
+          sessionStorage.removeItem(AUTH_USER_KEY);
+          sessionStorage.removeItem(COUPLE_STORAGE_KEY);
+        } catch {}
         localStorage.removeItem(AUTH_USER_KEY);
+        localStorage.removeItem(COUPLE_STORAGE_KEY);
         render();
       };
 
@@ -1641,20 +1859,23 @@
             render();
             return;
           }
-          state.currentUser = found;
-          localStorage.setItem(AUTH_USER_KEY, JSON.stringify(found));
-          if (found.coupleCode) {
-            state.coupleProfile = {
-              coupleCode: found.coupleCode,
-              myRole: found.role,
-              myName: found.nickname || found.username,
-              partnerName: found.partnerName || (found.role === "anh" ? "Em yêu" : "Anh yêu"),
-              matchedAt: new Date().toISOString()
-            };
-            localStorage.setItem(COUPLE_STORAGE_KEY, JSON.stringify(state.coupleProfile));
+          if (!found.inviteCode) {
+            found.inviteCode = generateInviteCode(accounts);
+            saveAccounts(accounts);
           }
+          state.currentUser = found;
+          try {
+            sessionStorage.removeItem(SESSION_LOGOUT_KEY);
+            sessionStorage.setItem(AUTH_USER_KEY, JSON.stringify(found));
+          } catch {}
+          localStorage.setItem(AUTH_USER_KEY, JSON.stringify(found));
+          syncCurrentUserFromAccounts();
           state.authModalOpen = false;
           state.authPassword = "";
+          if (!state.coupleProfile) {
+            state.coupleModalOpen = true;
+            state.coupleError = "";
+          }
           render();
         } else {
           // Register
@@ -1681,23 +1902,25 @@
             password: password,
             nickname: nickname,
             role: state.authRole,
-            coupleCode: state.coupleProfile ? state.coupleProfile.coupleCode : undefined,
-            partnerName: state.coupleProfile ? state.coupleProfile.partnerName : undefined,
+            inviteCode: generateInviteCode(accounts),
+            isMatched: false,
             createdAt: new Date().toISOString()
           };
 
           accounts.push(newAcc);
           saveAccounts(accounts);
           state.currentUser = newAcc;
+          try {
+            sessionStorage.removeItem(SESSION_LOGOUT_KEY);
+            sessionStorage.setItem(AUTH_USER_KEY, JSON.stringify(newAcc));
+          } catch {}
           localStorage.setItem(AUTH_USER_KEY, JSON.stringify(newAcc));
+          syncCurrentUserFromAccounts();
+          broadcastSync("ACCOUNTS_UPDATED", { newUserId: newAcc.id });
           state.authModalOpen = false;
           state.authPassword = "";
-
-          if (!state.coupleProfile) {
-            state.coupleModalOpen = true;
-            state.coupleMyName = nickname;
-            state.coupleRole = state.authRole;
-          }
+          state.coupleModalOpen = true;
+          state.coupleError = "";
 
           if (window.confetti) confetti({ particleCount: 65, spread: 70, origin: { y: 0.6 } });
           render();
