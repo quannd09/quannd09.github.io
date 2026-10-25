@@ -1445,41 +1445,6 @@
                     </button>
                   </div>
                 </form>
-
-                ${(() => {
-                  const others = loadAccounts().filter(a => (!state.currentUser || a.id !== state.currentUser.id) && !a.isRemote && !String(a.id).startsWith("remote-"));
-                  if (others.length === 0) return '';
-                  const incomingIds = new Set((state.currentUser && Array.isArray(state.currentUser.incomingRequests)) ? state.currentUser.incomingRequests.map(r => r.fromId) : []);
-                  const outgoingId = (state.currentUser && state.currentUser.outgoingRequestTo) ? state.currentUser.outgoingRequestTo.id : null;
-                  return `
-                    <div class="pt-3 border-t border-zinc-800/80 space-y-2">
-                      <span class="block text-xs font-semibold text-zinc-400">Tài khoản đã đăng ký trên hệ thống:</span>
-                      <div class="space-y-1.5 max-h-40 overflow-y-auto pr-1">
-                        ${others.map(acc => `
-                          <div class="flex items-center justify-between px-3 py-2 rounded-xl bg-[#110b14] border border-zinc-800">
-                            <div class="text-xs">
-                              <span class="font-semibold text-zinc-200">${escapeHtml(acc.nickname || acc.username)}</span>
-                              <span class="text-zinc-500 ml-1">@${escapeHtml(acc.username)} · #${escapeHtml(acc.inviteCode || '')}</span>
-                            </div>
-                            ${acc.isMatched ? `
-                              <span class="px-2.5 py-1 rounded-lg bg-zinc-800/80 text-zinc-500 text-xs font-medium">Đã kết đôi 🔒</span>
-                            ` : incomingIds.has(acc.id) ? `
-                              <button type="button" data-accept-request-id="${escapeHtml(acc.id)}" class="btn-accept-pair px-3 py-1 rounded-lg bg-rose-500 hover:bg-rose-600 text-white text-xs font-semibold transition-all">
-                                Đồng ý kết đôi 💕
-                              </button>
-                            ` : outgoingId === acc.id ? `
-                              <span class="px-2.5 py-1 rounded-lg bg-amber-950/60 border border-amber-700/50 text-amber-300 text-xs font-medium">Đang chờ đồng ý ⏳</span>
-                            ` : `
-                              <button type="button" data-quick-connect-id="${escapeHtml(acc.id)}" class="btn-quick-connect px-3 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500 text-rose-200 hover:text-white border border-rose-500/40 text-xs font-semibold transition-all">
-                                Gửi lời mời 💕
-                              </button>
-                            `}
-                          </div>
-                        `).join('')}
-                      </div>
-                    </div>
-                  `;
-                })()}
               `}
             </div>
           </div>
@@ -2257,17 +2222,6 @@
         state.coupleError = "";
         state.coupleSuccess = "";
       };
-
-      document.querySelectorAll(".btn-quick-connect").forEach(btn => {
-        btn.onclick = () => {
-          const targetId = btn.getAttribute("data-quick-connect-id");
-          const accounts = loadAccounts();
-          const partnerAcc = accounts.find(a => a.id === targetId);
-          if (partnerAcc) {
-            sendPairRequestToPartner(partnerAcc);
-          }
-        };
-      });
 
       document.querySelectorAll(".btn-accept-pair").forEach(btn => {
         btn.onclick = () => {
