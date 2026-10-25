@@ -363,6 +363,9 @@
             saveLocalWishes(state.wishes);
             render();
           } else if (data.type === "ACCOUNTS_UPDATED" || data.type === "COUPLE_SYNC") {
+            if (data.payload && Array.isArray(data.payload.accounts)) {
+              saveAccounts(data.payload.accounts);
+            }
             syncCurrentUserFromAccounts();
             state.wishes = loadLocalWishes();
             render();
@@ -378,6 +381,263 @@
     function broadcastSync(type, payload) {
       if (syncChannel) {
         try { syncChannel.postMessage({ type, payload }); } catch (e) {}
+      }
+    }
+
+    // Cloud Relay for Cross-Device, Cross-Window, and Incognito Realtime Sync
+    let activeRoomEventSource = null;
+    let activeUserEventSource = null;
+
+    function getTopicName(prefix, val) {
+      const sanitized = String(val || "").trim().toLowerCase().replace(/[^a-z0-9]/g, "_");
+      return "cpl_wlist_" + prefix + "_" + (sanitized || "default");
+    }
+
+    async function sendCloudMessage(topic, payload) {
+      try {
+        await fetch("https://ntfy.sh/" + topic, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+      } catch (err) {
+        console.warn("Cloud relay send failed:", err);
+      }
+    }
+
+    function subscribeCloudRoom(coupleCode) {
+      if (!coupleCode || typeof window === "undefined" || !("EventSource" in window)) return;
+      const topic = getTopicName("room", coupleCode);
+      if (activeRoomEventSource) {
+        try { activeRoomEventSource.close(); } catch {}
+        activeRoomEventSource = null;
+      }
+      try {
+        activeRoomEventSource = new EventSource("https://ntfy.sh/" + topic + "/sse");
+        activeRoomEventSource.onmessage = (event) => {
+          try {
+            const parsedEnvelope = JSON.parse(event.data);
+            if (!parsedEnvelope || !parsedEnvelope.message) return;
+            const msg = JSON.parse(parsedEnvelope.message);
+            if (!msg || !msg.type) return;
+
+            // Avoid processing our own broadcasts if senderId matches
+            if (state.currentUser && msg.senderId === state.currentUser.id) return;
+
+            if (msg.type === "WISH_CREATED" && msg.payload) {
+              const incoming = msg.payload;
+              if (!state.wishes.some(w => w.id === incoming.id)) {
+                state.wishes.unshift(incoming);
+                saveLocalWishes(state.wishes);
+                render();
+              }
+            } else if (msg.type === "WISH_UPDATED" && msg.payload) {
+              const incoming = msg.payload;
+              state.wishes = state.wishes.map(w => w.id === incoming.id ? incoming : w);
+              saveLocalWishes(state.wishes);
+              render();
+            } else if (msg.type === "WISH_DELETED" && msg.payload) {
+              state.wishes = state.wishes.filter(w => w.id !== String(msg.payload));
+              saveLocalWishes(state.wishes);
+              render();
+            } else if (msg.type === "WISHES_SYNC" && Array.isArray(msg.payload)) {
+              const existingMap = new Map(state.wishes.map(w => [w.id, w]));
+              let changed = false;
+              msg.payload.forEach(item => {
+                if (!existingMap.has(item.id)) {
+                  state.wishes.push(item);
+                  changed = true;
+                }
+              });
+              if (changed) {
+                saveLocalWishes(state.wishes);
+                render();
+              }
+            } else if (msg.type === "PIN_UPDATED" && msg.payload) {
+              state.adminPin = String(msg.payload);
+              localStorage.setItem(CUSTOM_PIN_KEY, state.adminPin);
+              render();
+            } else if (msg.type === "COUPLE_DISCONNECT") {
+              if (state.currentUser) {
+                const accounts = loadAccounts();
+                const myAcc = accounts.find(a => a.id === state.currentUser.id);
+                if (myAcc) {
+                  delete myAcc.coupleCode;
+                  delete myAcc.partnerId;
+                  delete myAcc.partnerName;
+                  myAcc.isMatched = false;
+                  saveAccounts(accounts);
+                }
+                state.coupleProfile = null;
+                syncCurrentUserFromAccounts();
+                render();
+              }
+            } else if (msg.type === "ROOM_SYNC_REQUEST" && state.currentUser) {
+              sendCloudMessage(topic, {
+                type: "WISHES_SYNC",
+                senderId: state.currentUser.id,
+                payload: state.wishes
+              });
+            }
+          } catch (e) {
+            console.warn("Error processing room SSE message:", e);
+          }
+        };
+      } catch (err) {
+        console.warn("SSE room subscribe failed:", err);
+      }
+    }
+
+    function subscribeUserCloudTopic(user) {
+      if (!user || typeof window === "undefined" || !("EventSource" in window)) return;
+      const userTopic = getTopicName("usr", user.username);
+      if (activeUserEventSource) {
+        try { activeUserEventSource.close(); } catch {}
+        activeUserEventSource = null;
+      }
+      try {
+        activeUserEventSource = new EventSource("https://ntfy.sh/" + userTopic + "/sse");
+        activeUserEventSource.onmessage = (event) => {
+          try {
+            const parsedEnvelope = JSON.parse(event.data);
+            if (!parsedEnvelope || !parsedEnvelope.message) return;
+            const msg = JSON.parse(parsedEnvelope.message);
+            if (!msg || !msg.type) return;
+
+            if (msg.type === "PAIR_REQUEST" && msg.sender) {
+              handleIncomingCloudPairRequest(msg);
+            } else if (msg.type === "PAIR_ACCEPT" && msg.sender) {
+              handleIncomingCloudPairAccept(msg);
+            }
+          } catch (e) {
+            console.warn("Error processing user SSE message:", e);
+          }
+        };
+      } catch (err) {}
+    }
+
+    function handleIncomingCloudPairRequest(msg) {
+      if (!state.currentUser) return;
+      const sender = msg.sender;
+      if (sender.username.toLowerCase() === state.currentUser.username.toLowerCase()) return;
+
+      const accounts = loadAccounts();
+      const myIdx = accounts.findIndex(a => a.id === state.currentUser.id);
+      if (myIdx < 0) return;
+      const myAcc = accounts[myIdx];
+
+      const sharedCode = (msg.coupleCode || myAcc.coupleCode || sender.inviteCode || generateInviteCode(accounts)).toUpperCase();
+      myAcc.coupleCode = sharedCode;
+      myAcc.partnerId = sender.id || ("remote-" + sender.username);
+      myAcc.partnerName = sender.nickname || sender.username;
+      myAcc.isMatched = true;
+      myAcc.matchedAt = new Date().toISOString();
+
+      let target = accounts.find(a => a.username.toLowerCase() === sender.username.toLowerCase());
+      if (!target) {
+        target = {
+          id: sender.id || ("remote-" + sender.username),
+          username: sender.username,
+          nickname: sender.nickname || sender.username,
+          inviteCode: sender.inviteCode || sharedCode,
+          coupleCode: sharedCode,
+          partnerId: myAcc.id,
+          partnerName: myAcc.nickname || myAcc.username,
+          isMatched: true,
+          isRemote: true
+        };
+        accounts.push(target);
+      } else {
+        target.coupleCode = sharedCode;
+        target.partnerId = myAcc.id;
+        target.partnerName = myAcc.nickname || myAcc.username;
+        target.isMatched = true;
+      }
+
+      saveAccounts(accounts);
+      syncCurrentUserFromAccounts();
+      subscribeCloudRoom(sharedCode);
+
+      // Reply with PAIR_ACCEPT on sender's user topic
+      sendCloudMessage(getTopicName("usr", sender.username), {
+        type: "PAIR_ACCEPT",
+        sender: {
+          id: myAcc.id,
+          username: myAcc.username,
+          nickname: myAcc.nickname || myAcc.username,
+          inviteCode: myAcc.inviteCode
+        },
+        coupleCode: sharedCode,
+        wishes: state.wishes
+      });
+
+      // Also publish wishes to the room
+      sendCloudMessage(getTopicName("room", sharedCode), {
+        type: "WISHES_SYNC",
+        senderId: myAcc.id,
+        payload: state.wishes
+      });
+
+      if (window.confetti) confetti({ particleCount: 70, spread: 80, origin: { y: 0.6 } });
+      render();
+    }
+
+    function handleIncomingCloudPairAccept(msg) {
+      if (!state.currentUser) return;
+      const sender = msg.sender;
+      const accounts = loadAccounts();
+      const myIdx = accounts.findIndex(a => a.id === state.currentUser.id);
+      if (myIdx < 0) return;
+      const myAcc = accounts[myIdx];
+
+      myAcc.partnerName = sender.nickname || sender.username;
+      if (msg.coupleCode) myAcc.coupleCode = msg.coupleCode;
+      myAcc.isMatched = true;
+
+      let target = accounts.find(a => a.username.toLowerCase() === sender.username.toLowerCase() || a.id === ("remote-" + sender.username));
+      if (target) {
+        target.nickname = sender.nickname || sender.username;
+        target.inviteCode = sender.inviteCode || target.inviteCode;
+      }
+      saveAccounts(accounts);
+      syncCurrentUserFromAccounts();
+
+      if (Array.isArray(msg.wishes) && msg.wishes.length > 0) {
+        const existingIds = new Set(state.wishes.map(w => w.id));
+        let added = false;
+        msg.wishes.forEach(w => {
+          if (!existingIds.has(w.id)) {
+            state.wishes.push(w);
+            added = true;
+          }
+        });
+        if (added) {
+          saveLocalWishes(state.wishes);
+        }
+      }
+
+      subscribeCloudRoom(myAcc.coupleCode);
+      if (window.confetti) confetti({ particleCount: 70, spread: 80, origin: { y: 0.6 } });
+      render();
+    }
+
+    function sendCloudPairRequest(myAcc, targetUsername, targetCode, sharedCode) {
+      const payload = {
+        type: "PAIR_REQUEST",
+        sender: {
+          id: myAcc.id,
+          username: myAcc.username,
+          nickname: myAcc.nickname || myAcc.username,
+          role: myAcc.role,
+          inviteCode: myAcc.inviteCode
+        },
+        coupleCode: sharedCode
+      };
+      if (targetUsername) {
+        sendCloudMessage(getTopicName("usr", targetUsername), payload);
+      }
+      if (targetCode) {
+        sendCloudMessage(getTopicName("code", targetCode), payload);
       }
     }
 
@@ -635,7 +895,7 @@
                 ${state.form.success ? `
                   <div class="rounded-xl bg-emerald-950/70 border border-emerald-700/60 px-4 py-3 text-sm text-emerald-200 flex items-center justify-between gap-3">
                     <span>✅ ${escapeHtml(state.form.success)}</span>
-                    <button id="btn-success-open-drawer" type="button" class="text-xs font-semibold underline text-emerald-300 hover:text-white shrink-0">Xem giỏ quà (${state.wishes.length})</button>
+                    <button id="btn-success-open-drawer" type="button" class="text-xs font-semibold underline text-emerald-300 hover:text-white shrink-0">Xem giỏ quà ${state.wishes.length}</button>
                   </div>
                 ` : ''}
 
@@ -677,7 +937,7 @@
                   </div>
                   <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div class="space-y-1">
-                      <label class="text-xs text-zinc-300 font-medium">📊 Google Apps Script Webhook URL (Đồng bộ Sheet)</label>
+                      <label class="text-xs text-zinc-300 font-medium">📊 Google Apps Script Webhook URL Đồng bộ Sheet</label>
                       <input id="inp-webhook" type="url" value="${escapeHtml(state.webhookUrl)}" placeholder="https://script.google.com/macros/s/.../exec" class="w-full rounded-xl bg-[#120c16] border border-zinc-700 px-3 py-2 text-xs text-white outline-none focus:border-rose-500" />
                     </div>
                     <div class="space-y-1">
@@ -710,7 +970,7 @@
                   <p class="text-xl sm:text-2xl font-bold text-amber-400 tabular-nums mt-1">${formatVND(stats.totalValue)}</p>
                 </div>
                 <div class="rounded-2xl bg-[#150f19] border border-rose-900/50 p-4">
-                  <span class="text-xs text-rose-300">Đang chuẩn bị / Đã mua (${stats.prepCount})</span>
+                  <span class="text-xs text-rose-300">Đang chuẩn bị / Đã mua: ${stats.prepCount}</span>
                   <p class="text-xl sm:text-2xl font-bold text-rose-400 tabular-nums mt-1">${formatVND(stats.prepBudget)}</p>
                 </div>
                 <div class="rounded-2xl bg-[#150f19] border border-emerald-900/40 p-4">
@@ -849,7 +1109,7 @@
           <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
             <div class="w-full max-w-2xl max-h-[88dvh] rounded-2xl bg-[#150f19] border border-rose-900/50 shadow-2xl flex flex-col overflow-hidden">
               <div class="px-6 py-4 border-b border-zinc-800 flex items-center justify-between">
-                <h3 class="font-serif text-xl sm:text-2xl font-bold text-rose-100">💖 Giỏ Quà Ước Mơ Của Em (${visibleWishes.length})</h3>
+                <h3 class="font-serif text-xl sm:text-2xl font-bold text-rose-100">💖 Giỏ Quà Ước Mơ Của Em - ${visibleWishes.length}</h3>
                 <button id="btn-close-drawer" type="button" class="px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs text-zinc-300">Đóng ✕</button>
               </div>
               <div class="p-5 sm:p-6 overflow-y-auto space-y-4 flex-1">
@@ -1242,6 +1502,13 @@
         state.wishes.unshift(newWish);
         saveLocalWishes(state.wishes);
         broadcastSync("WISH_CREATED", newWish);
+        if (state.coupleProfile && state.coupleProfile.coupleCode) {
+          sendCloudMessage(getTopicName("room", state.coupleProfile.coupleCode), {
+            type: "WISH_CREATED",
+            senderId: state.currentUser ? state.currentUser.id : undefined,
+            payload: newWish
+          });
+        }
         pushGoogleSheetWebhook("CREATE", newWish);
 
         state.form.title = "";
@@ -1293,6 +1560,13 @@
 
         saveLocalWishes(state.wishes);
         broadcastSync("WISH_UPDATED", target);
+        if (state.coupleProfile && state.coupleProfile.coupleCode) {
+          sendCloudMessage(getTopicName("room", state.coupleProfile.coupleCode), {
+            type: "WISH_UPDATED",
+            senderId: state.currentUser ? state.currentUser.id : undefined,
+            payload: target
+          });
+        }
         if (state.sbClient) {
           await state.sbClient.from("wishes").update({
             title: target.title,
@@ -1409,6 +1683,27 @@
             item.secret_note = state.secretNoteDraft.trim();
             saveLocalWishes(state.wishes);
             broadcastSync("WISH_UPDATED", item);
+            if (state.coupleProfile && state.coupleProfile.coupleCode) {
+              sendCloudMessage(getTopicName("room", state.coupleProfile.coupleCode), {
+                type: "WISH_UPDATED",
+                senderId: state.currentUser ? state.currentUser.id : undefined,
+                payload: item
+              });
+            }
+          if (state.coupleProfile && state.coupleProfile.coupleCode) {
+            sendCloudMessage(getTopicName("room", state.coupleProfile.coupleCode), {
+              type: "WISH_UPDATED",
+              senderId: state.currentUser ? state.currentUser.id : undefined,
+              payload: item
+            });
+          }
+            if (state.coupleProfile && state.coupleProfile.coupleCode) {
+              sendCloudMessage(getTopicName("room", state.coupleProfile.coupleCode), {
+                type: "WISH_UPDATED",
+                senderId: state.currentUser ? state.currentUser.id : undefined,
+                payload: item
+              });
+            }
             if (state.sbClient) {
               await state.sbClient.from("wishes").update({ secret_note: item.secret_note }).eq("id", id);
             }
@@ -1493,6 +1788,13 @@
           state.wishes = state.wishes.filter(w => w.id !== id);
           saveLocalWishes(state.wishes);
           broadcastSync("WISH_DELETED", id);
+          if (state.coupleProfile && state.coupleProfile.coupleCode) {
+            sendCloudMessage(getTopicName("room", state.coupleProfile.coupleCode), {
+              type: "WISH_DELETED",
+              senderId: state.currentUser ? state.currentUser.id : undefined,
+              payload: id
+            });
+          }
           if (state.sbClient) {
             await state.sbClient.from("wishes").update({ is_deleted: true }).eq("id", id);
           }
@@ -1509,7 +1811,7 @@
           return;
         }
         if (!partnerAcc) {
-          state.coupleError = "Không tìm thấy tài khoản người yêu với mã hoặc tên đăng nhập này. Bạn hãy kiểm tra lại mã hoặc bấm nút kết nối nhanh bên dưới nhé!";
+          state.coupleError = "Không tìm thấy tài khoản người yêu với mã hoặc tên đăng nhập này.";
           render();
           return;
         }
@@ -1568,7 +1870,118 @@
         }
 
         syncCurrentUserFromAccounts();
-        broadcastSync("ACCOUNTS_UPDATED", { sharedCode });
+        broadcastSync("ACCOUNTS_UPDATED", { accounts: loadAccounts(), sharedCode });
+
+        // Connect cloud relay and send pairing ping
+        sendCloudPairRequest(myAcc, targetAcc.username, targetAcc.inviteCode, sharedCode);
+        subscribeCloudRoom(sharedCode);
+
+        // Publish wishes to room
+        sendCloudMessage(getTopicName("room", sharedCode), {
+          type: "WISHES_SYNC",
+          senderId: myAcc.id,
+          payload: state.wishes
+        });
+
+        state.coupleCodeInput = "";
+        state.coupleError = "";
+        state.coupleSuccess = "";
+        state.coupleModalOpen = false;
+        if (window.confetti) confetti({ particleCount: 70, spread: 80, origin: { y: 0.6 } });
+        render();
+      }
+
+      function performRemotePairing(rawInput, cleanUpper, cleanLower) {
+        if (!state.currentUser) {
+          state.coupleError = "Bạn hãy đăng nhập hoặc đăng ký tài khoản trước khi kết đôi nhé.";
+          render();
+          return;
+        }
+
+        const accounts = loadAccounts();
+        const myIdx = accounts.findIndex(a => a.id === state.currentUser.id);
+        if (myIdx < 0) {
+          state.coupleError = "Không tìm thấy tài khoản hiện tại của bạn.";
+          render();
+          return;
+        }
+        const myAcc = accounts[myIdx];
+        const nowIso = new Date().toISOString();
+
+        const looksLikeCode = /^[A-Z0-9]+-[0-9]+$/i.test(cleanUpper) || rawInput.startsWith("#");
+        let sharedCode = "";
+        let partnerName = "";
+
+        if (looksLikeCode) {
+          sharedCode = cleanUpper;
+          partnerName = "Người yêu #" + cleanUpper;
+        } else {
+          partnerName = cleanLower;
+          const pairKey = [myAcc.username.toLowerCase(), cleanLower].sort().join("-").toUpperCase();
+          sharedCode = "PAIR-" + pairKey;
+        }
+
+        myAcc.coupleCode = sharedCode;
+        myAcc.partnerId = "remote-" + cleanLower;
+        myAcc.partnerName = partnerName;
+        myAcc.isMatched = true;
+        myAcc.matchedAt = nowIso;
+
+        let remoteAcc = accounts.find(a => a.id === ("remote-" + cleanLower) || a.username.toLowerCase() === cleanLower);
+        if (!remoteAcc) {
+          remoteAcc = {
+            id: "remote-" + cleanLower,
+            username: cleanLower,
+            nickname: partnerName,
+            inviteCode: sharedCode,
+            coupleCode: sharedCode,
+            partnerId: myAcc.id,
+            partnerName: myAcc.nickname || myAcc.username,
+            isMatched: true,
+            matchedAt: nowIso,
+            isRemote: true
+          };
+          accounts.push(remoteAcc);
+        } else {
+          remoteAcc.coupleCode = sharedCode;
+          remoteAcc.partnerId = myAcc.id;
+          remoteAcc.partnerName = myAcc.nickname || myAcc.username;
+          remoteAcc.isMatched = true;
+          remoteAcc.matchedAt = nowIso;
+        }
+
+        saveAccounts(accounts);
+
+        // Migrate local wishes to shared code
+        let wishesChanged = false;
+        state.wishes = state.wishes.map(w => {
+          if (w.author_id === myAcc.id) {
+            if (w.couple_code !== sharedCode) {
+              wishesChanged = true;
+              return { ...w, couple_code: sharedCode };
+            }
+          }
+          return w;
+        });
+        if (wishesChanged) {
+          saveLocalWishes(state.wishes);
+          broadcastSync("WISHES_SYNC", state.wishes);
+        }
+
+        syncCurrentUserFromAccounts();
+        broadcastSync("ACCOUNTS_UPDATED", { accounts: loadAccounts(), sharedCode });
+
+        // Connect cloud relay and send pairing ping
+        sendCloudPairRequest(myAcc, cleanLower, cleanUpper, sharedCode);
+        subscribeCloudRoom(sharedCode);
+
+        // Publish wishes to room
+        sendCloudMessage(getTopicName("room", sharedCode), {
+          type: "WISHES_SYNC",
+          senderId: myAcc.id,
+          payload: state.wishes
+        });
+
         state.coupleCodeInput = "";
         state.coupleError = "";
         state.coupleSuccess = "";
@@ -1613,6 +2026,7 @@
       const btnDisconnectCouple = document.getElementById("btn-disconnect-couple");
       if (btnDisconnectCouple) btnDisconnectCouple.onclick = () => {
         if (confirm("Bạn có chắc muốn hủy kết đôi hiện tại không?")) {
+          const oldCode = state.coupleProfile ? state.coupleProfile.coupleCode : null;
           const accounts = loadAccounts();
           const myId = state.currentUser ? state.currentUser.id : null;
           const partnerId = state.coupleProfile ? state.coupleProfile.partnerId : null;
@@ -1631,7 +2045,17 @@
             localStorage.removeItem(COUPLE_STORAGE_KEY);
           } catch {}
           syncCurrentUserFromAccounts();
-          broadcastSync("ACCOUNTS_UPDATED", { disconnected: true });
+          if (oldCode) {
+            sendCloudMessage(getTopicName("room", oldCode), {
+              type: "COUPLE_DISCONNECT",
+              senderId: myId
+            });
+          }
+          if (activeRoomEventSource) {
+            try { activeRoomEventSource.close(); } catch {}
+            activeRoomEventSource = null;
+          }
+          broadcastSync("ACCOUNTS_UPDATED", { accounts: loadAccounts(), disconnected: true });
           state.coupleModalOpen = false;
           render();
         }
@@ -1658,7 +2082,8 @@
       if (coupleForm) coupleForm.onsubmit = (e) => {
         e.preventDefault();
         state.coupleError = "";
-        const rawInput = state.coupleCodeInput.trim();
+        const inpElem = document.getElementById("inp-couple-code");
+        const rawInput = (inpElem ? inpElem.value : state.coupleCodeInput).trim();
         if (!rawInput) {
           state.coupleError = "Vui lòng nhập mã kết đôi hoặc tên đăng nhập của người yêu.";
           render();
@@ -1688,13 +2113,11 @@
            (a.nickname && a.nickname.toLowerCase() === cleanLower))
         );
 
-        if (!partnerAcc) {
-          state.coupleError = "Không tìm thấy tài khoản người yêu với mã hoặc tên đăng nhập này. Bạn hãy kiểm tra lại mã hoặc bấm nút kết nối nhanh bên dưới nhé!";
-          render();
-          return;
+        if (partnerAcc) {
+          performAccountPairing(partnerAcc);
+        } else {
+          performRemotePairing(rawInput, cleanUpper, cleanLower);
         }
-
-        performAccountPairing(partnerAcc);
       };
 
       // Change PIN Modal Handlers
@@ -1751,6 +2174,13 @@
         state.adminPin = newPin;
         localStorage.setItem(CUSTOM_PIN_KEY, newPin);
         broadcastSync("PIN_UPDATED", newPin);
+          if (state.coupleProfile && state.coupleProfile.coupleCode) {
+            sendCloudMessage(getTopicName("room", state.coupleProfile.coupleCode), {
+              type: "PIN_UPDATED",
+              senderId: state.currentUser ? state.currentUser.id : undefined,
+              payload: newPin
+            });
+          }
         state.pinChangeSuccess = true;
         render();
 
@@ -1780,6 +2210,14 @@
 
       const btnLogout = document.getElementById("btn-logout");
       if (btnLogout) btnLogout.onclick = () => {
+        if (activeRoomEventSource) {
+          try { activeRoomEventSource.close(); } catch {}
+          activeRoomEventSource = null;
+        }
+        if (activeUserEventSource) {
+          try { activeUserEventSource.close(); } catch {}
+          activeUserEventSource = null;
+        }
         state.currentUser = null;
         state.coupleProfile = null;
         try {
@@ -1898,7 +2336,8 @@
           } catch {}
           localStorage.setItem(AUTH_USER_KEY, JSON.stringify(newAcc));
           syncCurrentUserFromAccounts();
-          broadcastSync("ACCOUNTS_UPDATED", { newUserId: newAcc.id });
+          subscribeUserCloudTopic(newAcc);
+          broadcastSync("ACCOUNTS_UPDATED", { accounts: loadAccounts(), newUserId: newAcc.id });
           state.authModalOpen = false;
           state.authPassword = "";
           state.coupleModalOpen = true;
@@ -1911,6 +2350,12 @@
     }
 
     initSupabaseClient();
+    if (state.currentUser) {
+      subscribeUserCloudTopic(state.currentUser);
+      if (state.coupleProfile && state.coupleProfile.coupleCode) {
+        subscribeCloudRoom(state.coupleProfile.coupleCode);
+      }
+    }
     render();
   </script>
 </body>
