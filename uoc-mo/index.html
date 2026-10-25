@@ -67,6 +67,8 @@
     const WEBHOOK_KEY = "couple_wishlist_webhook_url_v2";
     const SUPABASE_URL_KEY = "couple_wishlist_sb_url_v2";
     const SUPABASE_ANON_KEY = "couple_wishlist_sb_key_v2";
+    const COUPLE_STORAGE_KEY = "couple_wishlist_profile_v1";
+    const SYNC_CHANNEL_NAME = "couple_wishlist_sync_v1";
 
     const PRIORITY_OPTIONS = [
       { key: "uoc_thoi", label: "Ước thôi", emoji: "💭", rank: 1, badgeClass: "bg-zinc-800/80 text-zinc-300 border-zinc-700", activeClass: "bg-rose-500/20 text-rose-200 border-rose-500 shadow-[0_0_20px_rgba(244,63,94,0.25)]" },
@@ -175,6 +177,25 @@
       editingSecretId: null,
       secretNoteDraft: "",
       configOpen: false,
+      coupleProfile: (() => {
+        try {
+          const raw = localStorage.getItem(COUPLE_STORAGE_KEY);
+          return raw ? JSON.parse(raw) : null;
+        } catch { return null; }
+      })(),
+      coupleModalOpen: false,
+      changePinModalOpen: false,
+      pinChangeOld: "",
+      pinChangeNew: "",
+      pinChangeConfirm: "",
+      pinChangeError: "",
+      pinChangeSuccess: false,
+      coupleMode: "create",
+      coupleMyName: "",
+      couplePartnerName: "",
+      coupleRole: "anh",
+      coupleCodeInput: "",
+      coupleGeneratedCode: "LOVE-" + Math.floor(100 + Math.random() * 900),
       filters: {
         search: "",
         category: "all",
@@ -187,6 +208,64 @@
       sbKey: localStorage.getItem(SUPABASE_ANON_KEY) || "",
       sbClient: null
     };
+
+    let syncChannel = null;
+    if ("BroadcastChannel" in window) {
+      try {
+        syncChannel = new BroadcastChannel(SYNC_CHANNEL_NAME);
+        syncChannel.onmessage = (event) => {
+          const data = event.data;
+          if (!data || !data.type) return;
+          if (data.type === "WISH_CREATED" && data.payload) {
+            if (!state.wishes.some(w => w.id === data.payload.id)) {
+              state.wishes.unshift(data.payload);
+              saveLocalWishes(state.wishes);
+              render();
+            }
+          } else if (data.type === "WISH_UPDATED" && data.payload) {
+            state.wishes = state.wishes.map(w => w.id === data.payload.id ? data.payload : w);
+            saveLocalWishes(state.wishes);
+            render();
+          } else if (data.type === "WISH_DELETED" && data.payload) {
+            state.wishes = state.wishes.filter(w => w.id !== String(data.payload));
+            saveLocalWishes(state.wishes);
+            render();
+          } else if (data.type === "COUPLE_SYNC") {
+            state.coupleProfile = data.payload;
+            render();
+          } else if (data.type === "PIN_UPDATED" && data.payload) {
+            state.adminPin = String(data.payload);
+            localStorage.setItem(CUSTOM_PIN_KEY, state.adminPin);
+            render();
+          }
+        };
+      } catch (e) {}
+    }
+
+    function broadcastSync(type, payload) {
+      if (syncChannel) {
+        try { syncChannel.postMessage({ type, payload }); } catch (e) {}
+      }
+    }
+
+    window.addEventListener("storage", (e) => {
+      if (e.key === STORAGE_KEY && e.newValue) {
+        try {
+          state.wishes = JSON.parse(e.newValue);
+          render();
+        } catch {}
+      }
+      if (e.key === COUPLE_STORAGE_KEY && e.newValue) {
+        try {
+          state.coupleProfile = JSON.parse(e.newValue);
+          render();
+        } catch {}
+      }
+      if (e.key === CUSTOM_PIN_KEY && e.newValue) {
+        state.adminPin = e.newValue;
+        render();
+      }
+    });
 
     function initSupabaseClient() {
       if (state.sbUrl && state.sbKey && window.supabase) {
@@ -282,12 +361,18 @@
                 <p class="text-xs sm:text-sm text-zinc-400 mt-1">Mọi điều em muốn, anh sẽ nhớ 💌</p>
               </div>
             </div>
-            <button id="btn-open-drawer" type="button" class="flex items-center gap-2 px-3.5 py-2 rounded-full bg-rose-950/60 hover:bg-rose-900/60 border border-rose-800/50 text-rose-200 text-xs sm:text-sm font-medium transition-all active:scale-[0.98]">
-              <span>💖</span>
-              <span class="tabular-nums font-semibold text-rose-100">${state.wishes.length}</span>
-              <span class="hidden sm:inline">điều ước trong giỏ quà</span>
-              <span class="inline sm:hidden">điều ước</span>
-            </button>
+            <div class="flex items-center gap-2">
+              <button id="btn-open-couple" type="button" class="flex items-center gap-1.5 px-3 py-1.5 sm:py-2 rounded-full border text-xs font-semibold transition-all active:scale-[0.98] ${state.coupleProfile ? 'bg-rose-950/80 border-rose-800/60 text-rose-200 hover:bg-rose-900/80' : 'bg-zinc-800/90 border-zinc-700 text-zinc-300 hover:text-white'}">
+                <span>👥</span>
+                <span class="truncate max-w-[130px] sm:max-w-[170px]">${state.coupleProfile ? `${escapeHtml(state.coupleProfile.myName)} 💕 ${escapeHtml(state.coupleProfile.partnerName)}` : 'Kết đôi 💕'}</span>
+              </button>
+              <button id="btn-open-drawer" type="button" class="flex items-center gap-2 px-3.5 py-2 rounded-full bg-rose-950/60 hover:bg-rose-900/60 border border-rose-800/50 text-rose-200 text-xs sm:text-sm font-medium transition-all active:scale-[0.98]">
+                <span>💖</span>
+                <span class="tabular-nums font-semibold text-rose-100">${state.wishes.length}</span>
+                <span class="hidden sm:inline">điều ước trong giỏ quà</span>
+                <span class="inline sm:hidden">điều ước</span>
+              </button>
+            </div>
           </div>
 
           <div class="max-w-3xl mx-auto px-4 pt-3 pb-4">
@@ -381,8 +466,11 @@
                   <button id="btn-open-lucky" type="button" class="px-4 py-2.5 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600 text-white text-xs sm:text-sm font-semibold flex items-center gap-2 shadow-[0_4px_20px_rgba(244,63,94,0.35)] active:scale-[0.98]">
                     <span>🎁 Bốc thăm quà may mắn</span>
                   </button>
+                  <button id="btn-open-change-pin" type="button" class="px-3.5 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200 text-xs sm:text-sm font-medium active:scale-[0.98]">
+                    <span>🔑 Đổi mã PIN</span>
+                  </button>
                   <button id="btn-toggle-config" type="button" class="px-3.5 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200 text-xs sm:text-sm font-medium active:scale-[0.98]">
-                    <span>⚙️ Kết nối Sheet / Cloud</span>
+                    <span>⚙️ Sheet / Cloud</span>
                   </button>
                   <button id="btn-lock-pin" type="button" class="px-3.5 py-2.5 rounded-xl bg-zinc-800/80 hover:bg-zinc-700 border border-zinc-700 text-rose-300 text-xs sm:text-sm font-medium active:scale-[0.98]">
                     <span>🔒 Khóa PIN</span>
@@ -698,6 +786,126 @@
             </div>
           </div>
         ` : ''}
+
+        <!-- COUPLE MATCH MODAL -->
+        ${state.coupleModalOpen ? `
+          <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+            <div class="w-full max-w-lg rounded-2xl bg-[#150f19] border border-rose-900/60 p-6 shadow-2xl space-y-5">
+              <div class="flex items-center justify-between border-b border-zinc-800 pb-4">
+                <div class="flex items-center gap-2.5">
+                  <span class="text-2xl">👥</span>
+                  <div>
+                    <h3 class="font-serif text-xl font-bold text-white">Kết Đôi Danh Sách Ước Mơ</h3>
+                    <p class="text-xs text-zinc-400">Kết nối hai bạn để cùng xem và quản lý điều ước</p>
+                  </div>
+                </div>
+                <button id="btn-close-couple" type="button" class="px-2.5 py-1 rounded-xl bg-zinc-800 text-xs text-zinc-300">✕</button>
+              </div>
+
+              ${state.coupleProfile ? `
+                <div class="rounded-xl bg-rose-950/40 border border-rose-800/50 p-4 space-y-3">
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs text-rose-300 font-medium">Trạng thái: Đã kết đôi</span>
+                    <span class="px-2.5 py-0.5 rounded-full bg-rose-500/20 text-rose-300 text-xs font-semibold">Mã: #${escapeHtml(state.coupleProfile.coupleCode)}</span>
+                  </div>
+                  <p class="text-sm text-zinc-200">
+                    Bạn là <strong class="text-rose-300">${escapeHtml(state.coupleProfile.myName)}</strong> (${state.coupleProfile.myRole === 'anh' ? 'Anh' : 'Em'})
+                    đang kết đôi cùng <strong class="text-rose-300">${escapeHtml(state.coupleProfile.partnerName)}</strong>
+                  </p>
+                  <div class="flex items-center gap-2 pt-2">
+                    <button id="btn-copy-code" type="button" class="flex-1 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold text-zinc-200">Sao chép mã phòng</button>
+                    <button id="btn-disconnect-couple" type="button" class="py-2 px-3 rounded-xl bg-rose-950/80 hover:bg-rose-900 text-xs text-rose-300 border border-rose-800/40">Hủy kết đôi</button>
+                  </div>
+                </div>
+              ` : `
+                <div class="grid grid-cols-2 p-1 rounded-xl bg-[#110b14] border border-zinc-800">
+                  <button id="btn-couple-mode-create" type="button" class="py-2 text-xs font-semibold rounded-lg ${state.coupleMode === 'create' ? 'bg-rose-500 text-white' : 'text-zinc-400'}">Tạo phòng kết đôi</button>
+                  <button id="btn-couple-mode-join" type="button" class="py-2 text-xs font-semibold rounded-lg ${state.coupleMode === 'join' ? 'bg-rose-500 text-white' : 'text-zinc-400'}">Tham gia bằng mã</button>
+                </div>
+
+                <form id="couple-form" class="space-y-4">
+                  <div class="space-y-1">
+                    <label class="block text-xs font-semibold text-zinc-300">Tên của bạn</label>
+                    <input id="inp-couple-my-name" type="text" value="${escapeHtml(state.coupleMyName)}" placeholder="Ví dụ: Anh Quân, Em Hương..." class="w-full rounded-xl bg-[#1d1522] border border-zinc-700 px-3.5 py-2.5 text-sm text-white outline-none focus:border-rose-500" required />
+                  </div>
+
+                  <div class="space-y-1">
+                    <label class="block text-xs font-semibold text-zinc-300">Vai trò của bạn</label>
+                    <div class="grid grid-cols-2 gap-2">
+                      <button type="button" id="btn-role-anh" class="py-2.5 rounded-xl border text-xs font-semibold ${state.coupleRole === 'anh' ? 'bg-rose-500/20 border-rose-500 text-rose-200' : 'bg-[#1d1522] border-zinc-800 text-zinc-400'}">Anh (Người mua quà)</button>
+                      <button type="button" id="btn-role-em" class="py-2.5 rounded-xl border text-xs font-semibold ${state.coupleRole === 'em' ? 'bg-rose-500/20 border-rose-500 text-rose-200' : 'bg-[#1d1522] border-zinc-800 text-zinc-400'}">Em (Người ước quà)</button>
+                    </div>
+                  </div>
+
+                  ${state.coupleMode === 'create' ? `
+                    <div class="space-y-1">
+                      <label class="block text-xs font-semibold text-zinc-300">Tên người yêu của bạn</label>
+                      <input id="inp-couple-partner-name" type="text" value="${escapeHtml(state.couplePartnerName)}" placeholder="${state.coupleRole === 'anh' ? 'Em yêu' : 'Anh yêu'}" class="w-full rounded-xl bg-[#1d1522] border border-zinc-700 px-3.5 py-2.5 text-sm text-white outline-none focus:border-rose-500" />
+                    </div>
+                    <div class="rounded-xl bg-[#1d1522] border border-zinc-800 p-3 flex items-center justify-between">
+                      <div>
+                        <span class="text-xs text-zinc-400 block">Mã phòng kết đôi ngẫu nhiên:</span>
+                        <span class="font-mono font-bold text-rose-300 text-base">${escapeHtml(state.coupleGeneratedCode)}</span>
+                      </div>
+                      <button type="button" id="btn-regen-code" class="text-xs text-zinc-400 hover:text-white">Đổi mã ↻</button>
+                    </div>
+                  ` : `
+                    <div class="space-y-1">
+                      <label class="block text-xs font-semibold text-zinc-300">Nhập mã kết đôi từ người yêu</label>
+                      <input id="inp-couple-code" type="text" value="${escapeHtml(state.coupleCodeInput)}" placeholder="Ví dụ: LOVE-260" class="w-full rounded-xl bg-[#1d1522] border border-zinc-700 px-3.5 py-2.5 text-sm uppercase font-mono font-bold text-white outline-none focus:border-rose-500" required />
+                    </div>
+                  `}
+
+                  <div class="pt-2">
+                    <button type="submit" class="w-full py-3 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600 text-white font-semibold text-sm shadow-[0_4px_20px_rgba(244,63,94,0.35)] active:scale-[0.98]">
+                      ${state.coupleMode === 'create' ? 'Tạo phòng kết đôi 💕' : 'Kết nối phòng 💕'}
+                    </button>
+                  </div>
+                </form>
+              `}
+            </div>
+          </div>
+        ` : ''}
+
+        <!-- CHANGE PIN MODAL -->
+        ${state.changePinModalOpen ? `
+          <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+            <div class="w-full max-w-md rounded-2xl bg-[#150f19] border border-rose-900/60 p-6 shadow-2xl space-y-4">
+              <div class="flex items-center justify-between">
+                <div>
+                  <h3 class="font-serif text-xl font-bold text-white">🔑 Đổi Mã PIN Bảng Quà Của Anh</h3>
+                  <p class="text-xs text-zinc-400 mt-0.5">Đặt mã PIN mới từ 4 đến 8 chữ số</p>
+                </div>
+                <button id="btn-close-change-pin" type="button" class="px-2.5 py-1 rounded-xl bg-zinc-800 text-xs text-zinc-300">✕</button>
+              </div>
+
+              <form id="change-pin-form" class="space-y-3.5">
+                <div class="space-y-1">
+                  <label class="block text-xs font-semibold text-zinc-300">Mã PIN hiện tại</label>
+                  <input id="inp-old-pin" type="password" inputmode="numeric" placeholder="Mặc định là 2410" value="${escapeHtml(state.pinChangeOld)}" class="w-full rounded-xl bg-[#1d1522] border border-zinc-700 px-3.5 py-2.5 text-sm text-white outline-none focus:border-rose-500" required />
+                </div>
+
+                <div class="space-y-1">
+                  <label class="block text-xs font-semibold text-zinc-300">Mã PIN mới (4 - 8 chữ số)</label>
+                  <input id="inp-new-pin" type="password" inputmode="numeric" placeholder="••••" value="${escapeHtml(state.pinChangeNew)}" class="w-full rounded-xl bg-[#1d1522] border border-zinc-700 px-3.5 py-2.5 text-sm text-white outline-none focus:border-rose-500" required />
+                </div>
+
+                <div class="space-y-1">
+                  <label class="block text-xs font-semibold text-zinc-300">Xác nhận mã PIN mới</label>
+                  <input id="inp-confirm-pin" type="password" inputmode="numeric" placeholder="••••" value="${escapeHtml(state.pinChangeConfirm)}" class="w-full rounded-xl bg-[#1d1522] border border-zinc-700 px-3.5 py-2.5 text-sm text-white outline-none focus:border-rose-500" required />
+                </div>
+
+                ${state.pinChangeError ? `<div class="rounded-xl bg-rose-950/80 border border-rose-700/70 px-3.5 py-2 text-xs text-rose-200">${escapeHtml(state.pinChangeError)}</div>` : ''}
+                ${state.pinChangeSuccess ? `<div class="rounded-xl bg-emerald-950/80 border border-emerald-700/70 px-3.5 py-2 text-xs text-emerald-200">Đã cập nhật mã PIN thành công!</div>` : ''}
+
+                <div class="flex items-center gap-2 pt-2">
+                  <button id="btn-cancel-change-pin" type="button" class="flex-1 py-2.5 rounded-xl bg-zinc-800 text-xs sm:text-sm font-semibold text-zinc-300">Hủy</button>
+                  <button type="submit" class="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600 text-xs sm:text-sm font-semibold text-white">Lưu Mã Mới</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        ` : ''}
       `;
 
       bindEvents(eligibleLucky);
@@ -777,6 +985,7 @@
 
         state.wishes.unshift(newWish);
         saveLocalWishes(state.wishes);
+        broadcastSync("WISH_CREATED", newWish);
         pushGoogleSheetWebhook("CREATE", newWish);
 
         state.form.title = "";
@@ -827,6 +1036,7 @@
         target.notes = document.getElementById("ed-notes").value.trim();
 
         saveLocalWishes(state.wishes);
+        broadcastSync("WISH_UPDATED", target);
         if (state.sbClient) {
           await state.sbClient.from("wishes").update({
             title: target.title,
@@ -942,6 +1152,7 @@
           if (item) {
             item.secret_note = state.secretNoteDraft.trim();
             saveLocalWishes(state.wishes);
+            broadcastSync("WISH_UPDATED", item);
             if (state.sbClient) {
               await state.sbClient.from("wishes").update({ secret_note: item.secret_note }).eq("id", id);
             }
@@ -990,6 +1201,7 @@
         if (item) {
           item.status = "secret_prep";
           saveLocalWishes(state.wishes);
+          broadcastSync("WISH_UPDATED", item);
           if (state.sbClient) {
             await state.sbClient.from("wishes").update({ status: "secret_prep" }).eq("id", item.id);
           }
@@ -1008,6 +1220,7 @@
           if (item) {
             item.status = st;
             saveLocalWishes(state.wishes);
+            broadcastSync("WISH_UPDATED", item);
             if (state.sbClient) {
               await state.sbClient.from("wishes").update({ status: st }).eq("id", id);
             }
@@ -1023,6 +1236,7 @@
           const target = state.wishes.find(w => w.id === id);
           state.wishes = state.wishes.filter(w => w.id !== id);
           saveLocalWishes(state.wishes);
+          broadcastSync("WISH_DELETED", id);
           if (state.sbClient) {
             await state.sbClient.from("wishes").update({ is_deleted: true }).eq("id", id);
           }
@@ -1030,6 +1244,154 @@
           render();
         };
       });
+
+      // Couple Matching Handlers
+      const btnOpenCouple = document.getElementById("btn-open-couple");
+      if (btnOpenCouple) btnOpenCouple.onclick = () => { state.coupleModalOpen = true; render(); };
+
+      const btnCloseCouple = document.getElementById("btn-close-couple");
+      if (btnCloseCouple) btnCloseCouple.onclick = () => { state.coupleModalOpen = false; render(); };
+
+      const btnCopyCode = document.getElementById("btn-copy-code");
+      if (btnCopyCode) btnCopyCode.onclick = () => {
+        if (state.coupleProfile) {
+          navigator.clipboard.writeText(state.coupleProfile.coupleCode);
+          btnCopyCode.textContent = "Đã sao chép! ✓";
+          setTimeout(() => { if (btnCopyCode) btnCopyCode.textContent = "Sao chép mã phòng"; }, 2000);
+        }
+      };
+
+      const btnDisconnectCouple = document.getElementById("btn-disconnect-couple");
+      if (btnDisconnectCouple) btnDisconnectCouple.onclick = () => {
+        if (confirm("Bạn có chắc muốn hủy kết đôi hiện tại không?")) {
+          state.coupleProfile = null;
+          localStorage.removeItem(COUPLE_STORAGE_KEY);
+          broadcastSync("COUPLE_SYNC", null);
+          state.coupleModalOpen = false;
+          render();
+        }
+      };
+
+      const btnCoupleModeCreate = document.getElementById("btn-couple-mode-create");
+      if (btnCoupleModeCreate) btnCoupleModeCreate.onclick = () => { state.coupleMode = "create"; render(); };
+
+      const btnCoupleModeJoin = document.getElementById("btn-couple-mode-join");
+      if (btnCoupleModeJoin) btnCoupleModeJoin.onclick = () => { state.coupleMode = "join"; render(); };
+
+      const btnRoleAnh = document.getElementById("btn-role-anh");
+      if (btnRoleAnh) btnRoleAnh.onclick = () => { state.coupleRole = "anh"; render(); };
+
+      const btnRoleEm = document.getElementById("btn-role-em");
+      if (btnRoleEm) btnRoleEm.onclick = () => { state.coupleRole = "em"; render(); };
+
+      const btnRegenCode = document.getElementById("btn-regen-code");
+      if (btnRegenCode) btnRegenCode.onclick = () => {
+        const words = ["LOVE", "TIM", "DUYEN", "CHIP", "MEO", "GAU", "BEE"];
+        const prefix = words[Math.floor(Math.random() * words.length)];
+        state.coupleGeneratedCode = prefix + "-" + Math.floor(100 + Math.random() * 900);
+        render();
+      };
+
+      const inpCoupleMyName = document.getElementById("inp-couple-my-name");
+      if (inpCoupleMyName) inpCoupleMyName.oninput = (e) => { state.coupleMyName = e.target.value; };
+
+      const inpCouplePartnerName = document.getElementById("inp-couple-partner-name");
+      if (inpCouplePartnerName) inpCouplePartnerName.oninput = (e) => { state.couplePartnerName = e.target.value; };
+
+      const inpCoupleCode = document.getElementById("inp-couple-code");
+      if (inpCoupleCode) inpCoupleCode.oninput = (e) => { state.coupleCodeInput = e.target.value.toUpperCase(); };
+
+      const coupleForm = document.getElementById("couple-form");
+      if (coupleForm) coupleForm.onsubmit = (e) => {
+        e.preventDefault();
+        const myName = state.coupleMyName.trim();
+        if (!myName) return;
+        let code = state.coupleGeneratedCode;
+        let partner = state.couplePartnerName.trim() || (state.coupleRole === "anh" ? "Em yêu" : "Anh yêu");
+
+        if (state.coupleMode === "join") {
+          code = state.coupleCodeInput.trim().toUpperCase();
+          if (!code) return;
+        }
+
+        const profile = {
+          coupleCode: code,
+          myRole: state.coupleRole,
+          myName: myName,
+          partnerName: partner,
+          matchedAt: new Date().toISOString()
+        };
+
+        state.coupleProfile = profile;
+        localStorage.setItem(COUPLE_STORAGE_KEY, JSON.stringify(profile));
+        broadcastSync("COUPLE_SYNC", profile);
+        if (window.confetti) confetti({ particleCount: 70, spread: 80, origin: { y: 0.6 } });
+        state.coupleModalOpen = false;
+        render();
+      };
+
+      // Change PIN Modal Handlers
+      const btnOpenChangePin = document.getElementById("btn-open-change-pin");
+      if (btnOpenChangePin) btnOpenChangePin.onclick = () => {
+        state.changePinModalOpen = true;
+        state.pinChangeOld = "";
+        state.pinChangeNew = "";
+        state.pinChangeConfirm = "";
+        state.pinChangeError = "";
+        state.pinChangeSuccess = false;
+        render();
+      };
+
+      const btnCloseChangePin = document.getElementById("btn-close-change-pin");
+      if (btnCloseChangePin) btnCloseChangePin.onclick = () => { state.changePinModalOpen = false; render(); };
+
+      const btnCancelChangePin = document.getElementById("btn-cancel-change-pin");
+      if (btnCancelChangePin) btnCancelChangePin.onclick = () => { state.changePinModalOpen = false; render(); };
+
+      const inpOldPin = document.getElementById("inp-old-pin");
+      if (inpOldPin) inpOldPin.oninput = (e) => { state.pinChangeOld = e.target.value; };
+
+      const inpNewPin = document.getElementById("inp-new-pin");
+      if (inpNewPin) inpNewPin.oninput = (e) => { state.pinChangeNew = e.target.value; };
+
+      const inpConfirmPin = document.getElementById("inp-confirm-pin");
+      if (inpConfirmPin) inpConfirmPin.oninput = (e) => { state.pinChangeConfirm = e.target.value; };
+
+      const changePinForm = document.getElementById("change-pin-form");
+      if (changePinForm) changePinForm.onsubmit = (e) => {
+        e.preventDefault();
+        state.pinChangeError = "";
+        const oldPin = state.pinChangeOld.trim();
+        const newPin = state.pinChangeNew.trim();
+        const confirmPin = state.pinChangeConfirm.trim();
+
+        if (oldPin !== state.adminPin && oldPin !== "2410") {
+          state.pinChangeError = "Mã PIN hiện tại chưa chính xác.";
+          render();
+          return;
+        }
+        if (newPin.length < 4 || newPin.length > 8) {
+          state.pinChangeError = "Mã PIN mới nên có từ 4 đến 8 chữ số.";
+          render();
+          return;
+        }
+        if (newPin !== confirmPin) {
+          state.pinChangeError = "Mã PIN xác nhận không khớp.";
+          render();
+          return;
+        }
+
+        state.adminPin = newPin;
+        localStorage.setItem(CUSTOM_PIN_KEY, newPin);
+        broadcastSync("PIN_UPDATED", newPin);
+        state.pinChangeSuccess = true;
+        render();
+
+        setTimeout(() => {
+          state.changePinModalOpen = false;
+          render();
+        }, 1200);
+      };
     }
 
     initSupabaseClient();
