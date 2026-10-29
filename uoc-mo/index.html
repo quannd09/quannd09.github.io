@@ -521,12 +521,53 @@
         syncCurrentUserFromAccounts();
         const isNowMatched = Boolean(state.coupleProfile && state.coupleProfile.isMatched);
         if (!wasMatched && isNowMatched && state.coupleProfile) {
-          subscribeCloudRoom(state.coupleProfile.coupleCode);
+          const sharedCode = state.coupleProfile.coupleCode;
+          state.wishes.forEach(w => {
+            if (!w.couple_code || w.couple_code !== sharedCode) {
+              w.couple_code = sharedCode;
+            }
+          });
+          saveLocalWishes(state.wishes);
+          subscribeCloudRoom(sharedCode);
+          syncAllLocalWishesToCloudRoom(sharedCode);
           if (window.confetti) confetti({ particleCount: 70, spread: 80, origin: { y: 0.6 } });
         }
         return true;
       }
       return false;
+    }
+
+    function processIncomingWish(action, item) {
+      if (!item) return false;
+      const itemId = String(item.id || item);
+      if (!itemId) return false;
+      if (action === "DELETE") {
+        const prevLen = state.wishes.length;
+        state.wishes = state.wishes.filter(w => w.id !== itemId);
+        return state.wishes.length !== prevLen;
+      }
+      // UPSERT
+      if (state.coupleProfile && !item.couple_code) {
+        item.couple_code = state.coupleProfile.coupleCode;
+      }
+      const idx = state.wishes.findIndex(w => w.id === itemId);
+      if (idx >= 0) {
+        state.wishes[idx] = { ...state.wishes[idx], ...item };
+      } else {
+        state.wishes.unshift(item);
+      }
+      return true;
+    }
+
+    function broadcastRoomWish(type, payload) {
+      broadcastSync(type, payload);
+      if (state.coupleProfile && state.coupleProfile.coupleCode) {
+        sendCloudMessage(getTopicName("room", state.coupleProfile.coupleCode), {
+          type,
+          senderId: state.currentUser ? state.currentUser.id : undefined,
+          payload
+        });
+      }
     }
 
     let syncChannel = null;
@@ -536,26 +577,25 @@
         syncChannel.onmessage = (event) => {
           const data = event.data;
           if (!data || !data.type) return;
-          if (data.type === "WISH_CREATED" && data.payload) {
-            const incoming = data.payload;
-            if (!state.wishes.some(w => w.id === incoming.id)) {
-              state.wishes.unshift(incoming);
+          if (data.type === "WISH_CREATED" || data.type === "WISH_UPDATED") {
+            if (data.payload && processIncomingWish("UPSERT", data.payload)) {
               saveLocalWishes(state.wishes);
               render();
             }
-          } else if (data.type === "WISH_UPDATED" && data.payload) {
-            const incoming = data.payload;
-            state.wishes = state.wishes.map(w => w.id === incoming.id ? incoming : w);
-            saveLocalWishes(state.wishes);
-            render();
-          } else if (data.type === "WISH_DELETED" && data.payload) {
-            state.wishes = state.wishes.filter(w => w.id !== String(data.payload));
-            saveLocalWishes(state.wishes);
-            render();
+          } else if (data.type === "WISH_DELETED") {
+            if (data.payload && processIncomingWish("DELETE", data.payload)) {
+              saveLocalWishes(state.wishes);
+              render();
+            }
           } else if (data.type === "WISHES_SYNC" && Array.isArray(data.payload)) {
-            state.wishes = data.payload;
-            saveLocalWishes(state.wishes);
-            render();
+            let changed = false;
+            data.payload.forEach(item => {
+              if (processIncomingWish("UPSERT", item)) changed = true;
+            });
+            if (changed) {
+              saveLocalWishes(state.wishes);
+              render();
+            }
           } else if (data.type === "ACCOUNTS_UPDATED" || data.type === "COUPLE_SYNC") {
             if (data.payload && Array.isArray(data.payload.accounts)) {
               mergeAccountLists(data.payload.accounts);
@@ -687,64 +727,133 @@
       } catch (err) {}
     }
 
-    function subscribeCloudRoom(coupleCode) {
-      if (!coupleCode || typeof window === "undefined" || !("EventSource" in window)) return;
+    async function syncAllLocalWishesToCloudRoom(coupleCode) {
+      const code = coupleCode || (state.coupleProfile ? state.coupleProfile.coupleCode : null);
+      if (!code || !state.wishes || state.wishes.length === 0) return;
+      const topic = getTopicName("room", code);
+      for (const wish of state.wishes) {
+        if (!wish.couple_code) wish.couple_code = code;
+        await sendCloudMessage(topic, {
+          type: "WISH_CREATED",
+          senderId: state.currentUser ? state.currentUser.id : undefined,
+          payload: wish
+        });
+      }
+      saveLocalWishes(state.wishes);
+    }
+
+    function processRoomEnvelope(msg, shouldRender = true) {
+      if (!msg || !msg.type) return false;
+      let changed = false;
+      if (msg.type === "WISH_CREATED" || msg.type === "WISH_UPDATED") {
+        if (msg.payload && processIncomingWish("UPSERT", msg.payload)) {
+          changed = true;
+        }
+      } else if (msg.type === "WISH_DELETED") {
+        if (msg.payload && processIncomingWish("DELETE", msg.payload)) {
+          changed = true;
+        }
+      } else if (msg.type === "WISHES_SYNC" && Array.isArray(msg.payload)) {
+        msg.payload.forEach(item => {
+          if (processIncomingWish("UPSERT", item)) changed = true;
+        });
+      } else if (msg.type === "ROOM_SYNC_REQUEST") {
+        if (state.currentUser && msg.senderId !== state.currentUser.id && state.wishes.length > 0) {
+          syncAllLocalWishesToCloudRoom(state.coupleProfile ? state.coupleProfile.coupleCode : null);
+        }
+      }
+      if (changed) {
+        saveLocalWishes(state.wishes);
+        if (shouldRender) render();
+      }
+      return changed;
+    }
+
+    async function pullRoomWishesNow(coupleCode) {
+      if (!coupleCode) return;
       const topic = getTopicName("room", coupleCode);
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 4000);
+        const res = await fetch("https://ntfy.sh/" + topic + "/json?poll=1&since=all", {
+          signal: controller.signal
+        });
+        clearTimeout(timer);
+        if (!res.ok) return;
+        const text = await res.text();
+        const lines = text.trim().split("\n").filter(Boolean);
+        let changed = false;
+        for (const line of lines) {
+          try {
+            const env = JSON.parse(line);
+            let msg = null;
+            if (env.attachment && env.attachment.url) {
+              try {
+                const attRes = await fetch(env.attachment.url);
+                msg = await attRes.json();
+              } catch {}
+            }
+            if (!msg && env.message) {
+              try { msg = JSON.parse(env.message); } catch {}
+            }
+            if (msg && msg.type) {
+              if (processRoomEnvelope(msg, false)) {
+                changed = true;
+              }
+            }
+          } catch {}
+        }
+        if (changed) {
+          saveLocalWishes(state.wishes);
+          render();
+        }
+      } catch (err) {
+        console.warn("Room replay pull error:", err);
+      }
+    }
+
+    function subscribeCloudRoom(coupleCode) {
+      if (!coupleCode || typeof window === "undefined") return;
+      const topic = getTopicName("room", coupleCode);
+
+      // 1. Immediately poll full historical replay from cloud
+      pullRoomWishesNow(coupleCode);
+
+      // 2. Setup SSE connection for live updates
+      if (!("EventSource" in window)) return;
       if (activeRoomEventSource) {
         try { activeRoomEventSource.close(); } catch {}
         activeRoomEventSource = null;
       }
       try {
         activeRoomEventSource = new EventSource("https://ntfy.sh/" + topic + "/sse?since=all");
-        activeRoomEventSource.onmessage = (event) => {
+        activeRoomEventSource.onopen = () => {
+          sendCloudMessage(topic, {
+            type: "ROOM_SYNC_REQUEST",
+            senderId: state.currentUser ? state.currentUser.id : undefined,
+            timestamp: Date.now()
+          });
+          if (state.wishes.length > 0) {
+            syncAllLocalWishesToCloudRoom(coupleCode);
+          }
+        };
+        activeRoomEventSource.onmessage = async (event) => {
           try {
             const parsedEnvelope = JSON.parse(event.data);
-            if (!parsedEnvelope || !parsedEnvelope.message) return;
-            const msg = JSON.parse(parsedEnvelope.message);
-            if (!msg || !msg.type) return;
-
-            if (state.currentUser && msg.senderId === state.currentUser.id) return;
-
-            if (msg.type === "WISH_CREATED" && msg.payload) {
-              const incoming = msg.payload;
-              if (!state.wishes.some(w => w.id === incoming.id)) {
-                state.wishes.unshift(incoming);
-                saveLocalWishes(state.wishes);
-                render();
-              }
-            } else if (msg.type === "WISH_UPDATED" && msg.payload) {
-              const incoming = msg.payload;
-              state.wishes = state.wishes.map(w => w.id === incoming.id ? incoming : w);
-              saveLocalWishes(state.wishes);
-              render();
-            } else if (msg.type === "WISH_DELETED" && msg.payload) {
-              state.wishes = state.wishes.filter(w => w.id !== String(msg.payload));
-              saveLocalWishes(state.wishes);
-              render();
-            } else if (msg.type === "WISHES_SYNC" && Array.isArray(msg.payload)) {
-              const existingMap = new Map(state.wishes.map(w => [w.id, w]));
-              let changed = false;
-              msg.payload.forEach(item => {
-                if (!existingMap.has(item.id)) {
-                  state.wishes.push(item);
-                  changed = true;
-                }
-              });
-              if (changed) {
-                saveLocalWishes(state.wishes);
-                render();
-              }
-            } else if (msg.type === "PIN_UPDATED" && msg.payload) {
-              state.adminPin = String(msg.payload);
-              localStorage.setItem(CUSTOM_PIN_KEY, state.adminPin);
-              render();
-            } else if (msg.type === "ROOM_SYNC_REQUEST" && state.currentUser) {
-              sendCloudMessage(topic, {
-                type: "WISHES_SYNC",
-                senderId: state.currentUser.id,
-                payload: state.wishes
-              });
+            if (!parsedEnvelope) return;
+            let msg = null;
+            if (parsedEnvelope.attachment && parsedEnvelope.attachment.url) {
+              try {
+                const attRes = await fetch(parsedEnvelope.attachment.url);
+                msg = await attRes.json();
+              } catch {}
             }
+            if (!msg && parsedEnvelope.message) {
+              try { msg = JSON.parse(parsedEnvelope.message); } catch {}
+            }
+            if (!msg || !msg.type) return;
+            if (state.currentUser && msg.senderId === state.currentUser.id && msg.type !== "ROOM_SYNC_REQUEST") return;
+            processRoomEnvelope(msg, true);
           } catch (e) {
             console.warn("Error processing room SSE message:", e);
           }
@@ -846,9 +955,11 @@
         const activeCode = state.coupleProfile.coupleCode.toUpperCase();
         const myId = state.currentUser ? state.currentUser.id : null;
         const partnerId = state.coupleProfile.partnerId || null;
+        const partnerName = state.coupleProfile.partnerName ? state.coupleProfile.partnerName.toLowerCase() : "";
         visibleWishes = state.wishes.filter(w =>
           (w.couple_code && w.couple_code.toUpperCase() === activeCode) ||
-          (w.author_id && (w.author_id === myId || (partnerId && w.author_id === partnerId)))
+          (w.author_id && (w.author_id === myId || (partnerId && w.author_id === partnerId))) ||
+          (w.author_name && partnerName && w.author_name.toLowerCase() === partnerName)
         );
       } else if (state.currentUser) {
         visibleWishes = state.wishes.filter(w => w.author_id && w.author_id === state.currentUser.id);
@@ -1648,14 +1759,7 @@
 
         state.wishes.unshift(newWish);
         saveLocalWishes(state.wishes);
-        broadcastSync("WISH_CREATED", newWish);
-        if (state.coupleProfile && state.coupleProfile.coupleCode) {
-          sendCloudMessage(getTopicName("room", state.coupleProfile.coupleCode), {
-            type: "WISH_CREATED",
-            senderId: state.currentUser ? state.currentUser.id : undefined,
-            payload: newWish
-          });
-        }
+        broadcastRoomWish("WISH_CREATED", newWish);
         pushGoogleSheetWebhook("CREATE", newWish);
 
         state.form.title = "";
@@ -1708,14 +1812,7 @@
         target.notes = document.getElementById("ed-notes").value.trim();
 
         saveLocalWishes(state.wishes);
-        broadcastSync("WISH_UPDATED", target);
-        if (state.coupleProfile && state.coupleProfile.coupleCode) {
-          sendCloudMessage(getTopicName("room", state.coupleProfile.coupleCode), {
-            type: "WISH_UPDATED",
-            senderId: state.currentUser ? state.currentUser.id : undefined,
-            payload: target
-          });
-        }
+        broadcastRoomWish("WISH_UPDATED", target);
         if (state.sbClient) {
           await state.sbClient.from("wishes").update({
             title: target.title,
@@ -1780,14 +1877,7 @@
           if (item) {
             item.secret_note = state.secretNoteDraft.trim();
             saveLocalWishes(state.wishes);
-            broadcastSync("WISH_UPDATED", item);
-            if (state.coupleProfile && state.coupleProfile.coupleCode) {
-              sendCloudMessage(getTopicName("room", state.coupleProfile.coupleCode), {
-                type: "WISH_UPDATED",
-                senderId: state.currentUser ? state.currentUser.id : undefined,
-                payload: item
-              });
-            }
+            broadcastRoomWish("WISH_UPDATED", item);
             if (state.sbClient) {
               await state.sbClient.from("wishes").update({ secret_note: item.secret_note }).eq("id", id);
             }
@@ -1836,7 +1926,7 @@
         if (item) {
           item.status = "secret_prep";
           saveLocalWishes(state.wishes);
-          broadcastSync("WISH_UPDATED", item);
+          broadcastRoomWish("WISH_UPDATED", item);
           if (state.sbClient) {
             await state.sbClient.from("wishes").update({ status: "secret_prep" }).eq("id", item.id);
           }
@@ -1855,7 +1945,7 @@
           if (item) {
             item.status = st;
             saveLocalWishes(state.wishes);
-            broadcastSync("WISH_UPDATED", item);
+            broadcastRoomWish("WISH_UPDATED", item);
             if (state.sbClient) {
               await state.sbClient.from("wishes").update({ status: st }).eq("id", id);
             }
@@ -1872,14 +1962,7 @@
           const target = state.wishes.find(w => w.id === id);
           state.wishes = state.wishes.filter(w => w.id !== id);
           saveLocalWishes(state.wishes);
-          broadcastSync("WISH_DELETED", id);
-          if (state.coupleProfile && state.coupleProfile.coupleCode) {
-            sendCloudMessage(getTopicName("room", state.coupleProfile.coupleCode), {
-              type: "WISH_DELETED",
-              senderId: state.currentUser ? state.currentUser.id : undefined,
-              payload: id
-            });
-          }
+          broadcastRoomWish("WISH_DELETED", id);
           if (state.sbClient) {
             await state.sbClient.from("wishes").update({ is_deleted: true }).eq("id", id);
           }
@@ -1958,30 +2041,18 @@
         const cleanedAccounts = saveAccounts(accounts);
 
         // Migrate wishes authored by either partner to the shared couple code
-        let wishesChanged = false;
         state.wishes = state.wishes.map(w => {
-          if (w.author_id === myAcc.id || w.author_id === senderAcc.id) {
-            if (w.couple_code !== sharedCode) {
-              wishesChanged = true;
-              return { ...w, couple_code: sharedCode };
-            }
+          if (w.author_id === myAcc.id || w.author_id === senderAcc.id || !w.couple_code) {
+            return { ...w, couple_code: sharedCode };
           }
           return w;
         });
-        if (wishesChanged) {
-          saveLocalWishes(state.wishes);
-          broadcastSync("WISHES_SYNC", state.wishes);
-        }
+        saveLocalWishes(state.wishes);
 
         syncCurrentUserFromAccounts();
         publishAccountsToCloud(cleanedAccounts);
         subscribeCloudRoom(sharedCode);
-
-        sendCloudMessage(getTopicName("room", sharedCode), {
-          type: "WISHES_SYNC",
-          senderId: myAcc.id,
-          payload: state.wishes
-        });
+        syncAllLocalWishesToCloudRoom(sharedCode);
 
         state.coupleCodeInput = "";
         state.coupleError = "";
@@ -2502,6 +2573,13 @@
 
     initSupabaseClient();
     subscribeGlobalCloudRegistry();
+    pullCloudAccountsNow().then(() => {
+      syncCurrentUserFromAccounts();
+      if (state.currentUser && state.coupleProfile && state.coupleProfile.coupleCode) {
+        subscribeCloudRoom(state.coupleProfile.coupleCode);
+      }
+      render();
+    });
     if (state.currentUser && state.coupleProfile && state.coupleProfile.coupleCode) {
       subscribeCloudRoom(state.coupleProfile.coupleCode);
     }
